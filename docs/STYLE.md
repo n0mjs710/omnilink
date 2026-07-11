@@ -25,6 +25,15 @@ implementers**. When in doubt, open `ipsc2hbpc/src/` and match it.
   (`nx_frame`).
 - Module-prefixed snake_case: `nx_core_ingress`, `hbp_handle_dmrd`. Constants
   UPPER_SNAKE in `*_const.h` where the list is long (house pattern).
+- **The `nx_` prefix is reserved for the adapter/core boundary contract**
+  (from "nexus" — the meeting point): the canonical frame and its
+  constants (`nx_frame`, `NX_VER`, `NXF_*`), the core API adapters call
+  (`nx_core_*`, `nx_event_emit`), and the adapter contract types
+  (`nx_adapter_ops`, `nx_system_cfg`) — i.e., everything declared in
+  `frame.h` and `adapter.h`, and nothing else. Seeing `nx_` means
+  "canonical data or the contract that carries it across the boundary."
+  Module internals — including the core's own — use their module prefix
+  (`route_`, `event_`, `hbp_`, ...), never `nx_`.
 - Lifted modules (`eventloop`, `toml`, `net`, `log`, `crypto`, `dmr/`) are
   copied **unchanged** where possible; local changes to them must be
   commented `/* omnilink: ... */` so future re-syncs with the source repos
