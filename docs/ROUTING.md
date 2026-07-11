@@ -238,7 +238,12 @@ member    = [
 
 Config load validates: unique system names, unique `(system, tgid)` across
 all bridges, slot present iff the member's protocol is slotted, and builds
-the immutable tables of ARCHITECTURE.md §5.
+the immutable tables of ARCHITECTURE.md §5. Validation errors must name
+the offending line *and the remedy* — in particular, the duplicate
+`(system, tgid)` rejection (D-05) must say plainly that one TGID on one
+system belongs to exactly one bridge, and that a per-slot split (an
+hblink3-ism) is modeled as two systems if truly needed. Operators
+migrating hblink3/dmrlink3 configs are the ones who will hit this.
 
 Static rules only in phase 1. The hblink3 rules engine's dynamic layer
 (ACTIVE/ON/OFF, timeouts, trigger TGIDs) is a known, wanted feature —
