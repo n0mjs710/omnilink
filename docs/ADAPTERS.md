@@ -29,6 +29,13 @@ void nx_event_emit(/* subsys, sys, ev, lvl, fields... */);
 Everything is a direct synchronous call on one thread — no queues, no
 rings, no handoffs (ARCHITECTURE.md §2).
 
+**Wire I/O is an adapter concern, not the core's.** An adapter need not
+have a wire at all: a *virtual* adapter (§7) opens no sockets, implements
+`egress` as a capture/sink, and originates streams via `nx_core_ingress` —
+the same contract with a null transport. Everything below in these
+universal duties that names sockets/protocol machinery simply does not
+apply to such an adapter.
+
 **Each system is a fully isolated instance.** The adapter *type* is
 shared code only: every configured system gets its own state object
 (sockets, peers, streams, ACLs, counters — the moral equivalent of one
@@ -226,14 +233,51 @@ sockets non-blocking via `ev_loop`.
 - **Why:** core↔core interconnect with zero translation loss (no FEC
   re-encode, no LC synthesis — the canonical frame goes through
   untouched, `origin_peer`/`src` intact for loop observation, ROUTING.md §7);
-  and the external integration point: a recorder, a parrot, an analytics
-  feed, or one day HBlink4-as-a-port speaks this instead of a DMR protocol.
+  and the external integration point: a recorder, an analytics feed, or one
+  day HBlink4-as-a-port speaks this instead of a DMR protocol. (An
+  out-of-process talkback could speak PORT too, but the built-in Playback
+  adapter (§7) is the first-class path.)
 - **Bridge membership:** like OBP, membership TGIDs are the allow list.
 - Simplest adapter (~400 LOC); built in phase 3 partly as the test harness
   for everything else (a Python `port` speaker in `tests/` can inject and
   capture canonical frames without any radio hardware).
 
-## 7. HBlink4's place (decision D-03, restated)
+## 7. Playback — virtual talkback adapter (no transport) (D-26)
+
+A **virtual adapter**: no wire, no socket, no peer. It implements the §1
+contract with a null transport and exists only to echo a caller's own audio
+back so they can hear how they sound. Optional and load-if-needed (D-23):
+absent from config, it does not exist. It is also the reference shape for
+any future no-wire endpoint (recorder, announcer).
+
+- **Identity:** owns one real 24-bit radio ID from config, registered as a
+  known subscriber at `init` so unit calls addressed to it route to this
+  system. Every reply is sourced from this ID — the single fact that lets one
+  mechanism serve both group and unit.
+- **Capture (`egress` = sink):** as a bridge member for its configured
+  TGID(s) the core hands it egress frames; it buffers one stream's canonical
+  frames (CALL_START…VOICE…CALL_END, `vseq` as received). No wire encode — it
+  keeps the canonical frames verbatim.
+- **Replay (`nx_core_ingress`):** after CALL_END (plus a configurable delay)
+  it re-emits the buffered stream as a **new** stream — fresh `stream_tag`,
+  `src` = its own radio ID — with `dst` mirroring the inbound call type:
+  - **group in → group out:** re-key onto the same TGID (the talkgroup hears
+    it back);
+  - **unit in → unit out:** a private call back to the original caller's
+    `src`.
+  Same code path; only `dst` differs, and the core's normal routing (bridge
+  membership / unit route cache) delivers it. The core learns nothing about
+  playback.
+- **Clocking:** position-preserving clocked egress from the buffer (the D-17
+  egress-clock discipline), on the loop, only while a playback is live —
+  never on the per-frame routing hot path. malloc-free: the capture buffer is
+  sized at `init` from a bounded max-capture-length config.
+- **Config:** radio ID; enabled mode(s) (group / unit / both); the TGID(s) or
+  bridge it answers on; replay delay; max capture seconds.
+- **Conformance (D-11):** the loopback identity vector — replayed frames are
+  bit-identical to captured frames, since no re-encode occurs — is its test.
+
+## 8. HBlink4's place (decision D-03, restated)
 
 HBlink4 is **not** folded in and is **not** a special adapter in phase 1–5.
 The agreed hblink3⇄hblink4 doc already settled the shape: edge access
@@ -252,7 +296,7 @@ per-device authentication/access-policy as the primary organizing idea —
 in OmniLink, login matching drops devices into protocol-primitive
 systems, full stop.
 
-## 8. Foreign digital modes (D-24)
+## 9. Foreign digital modes (D-24)
 
 OmniLink is a DMR application. If an adapter for another digital mode
 (e.g. a Fusion adapter) ever exists, it is **that adapter's job to speak

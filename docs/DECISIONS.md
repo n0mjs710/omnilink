@@ -235,7 +235,7 @@ IDs, DMR LC, A–F burst positions, ETSI payload kinds. If a foreign-mode
 adapter (e.g. Fusion) ever exists, it is that adapter's job to translate
 to DMR semantics; such adapters are expected to be rare,
 infrastructure-to-infrastructure only, and never repeater-facing
-(ADAPTERS.md §8).
+(ADAPTERS.md §9).
 
 ## D-25 — Same (src, dst) is not loop evidence; loop detection is a
 pattern alarm, never a datapath guess
@@ -253,3 +253,36 @@ Loops are misconfigurations; the fix is operator action. Structural
 prevention (never-to-origin, unique membership) and OBP edge
 stream-dedupe stand; an optional phase-6 circuit breaker is available as
 configurable policy.
+
+## D-26 — Playback (talkback) is a virtual, transport-less adapter with its
+own radio ID
+
+A talkback — replay a caller's own audio so they hear how they sound — is an
+**optional adapter, not a core feature**. The core stays unaware of it
+(D-23); with no playback system configured, no playback code or config
+exists. It is the first **virtual adapter**: no wire protocol, no socket, no
+peer. It implements the ordinary adapter contract (ADAPTERS.md §1) with a
+null transport — `init` opens no sockets (timers only), `egress` *captures*
+the stream instead of transmitting it, and it originates the reply through
+`nx_core_ingress` like any adapter forwarding traffic. This is the proof
+that the contract's seam is core-facing frame I/O, not wire I/O, and the
+template for other virtual endpoints later (recorder, announcer).
+
+It owns a **real 24-bit radio ID** (config), made known so unit calls
+addressed to it route in. The captured stream is replayed as a **new stream
+sourced from that ID**, which is exactly what collapses group and unit into
+one mechanism: the reply mirrors the inbound call type. A group call
+captured off a TGID is re-keyed onto that TGID from the playback ID
+(everyone on the talkgroup hears it back); a private call placed *to* the
+playback ID is answered with a private call *from* it back to the original
+source (an ordinary unit reply the route cache already knows how to
+deliver). Only the reply's `dst` differs — TGID vs. the caller's `src` — and
+the core's normal routing handles both; nothing about playback reaches the
+core. Replay is position-preserving clocked egress from a bounded,
+init-sized buffer (the D-17 egress-clock discipline), scheduled after
+CALL_END and running only while a playback is live — off the routing hot
+path, which is why this had to be a bolt-on standalone process in the Python
+era and does not here. It does no FEC or wire work (canonical frames only),
+so capture→replay is bit-identical and its conformance test is the loopback
+identity (FRAME.md §7). Per D-21 it adds no receiver-side behavior; it is an
+endpoint that happens to echo.
