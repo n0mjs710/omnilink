@@ -106,17 +106,18 @@ purely additive to operators and depends on machinery earlier phases build.
 
 - Implement the transport-less adapter per ADAPTERS.md §7 / D-26: `egress`
   as a capture sink into a bounded, init-sized buffer; clocked
-  position-preserving replay via `nx_core_ingress` after CALL_END; its own
-  configured 24-bit radio ID registered in the subscriber registry (phase 5)
-  so unit calls route to it. Group and unit modes fall out of mirroring the
-  inbound call type onto the reply's `dst`.
+  position-preserving replay via `nx_core_ingress` after CALL_END, re-keyed
+  onto the captured TGID and sourced from its own configured 24-bit radio ID.
+- **Group calls only** (D-26, revised 2026-08-15). Playback is not registered
+  as a reachable subscriber and is never addressed by radio ID — a federated
+  design cannot demand a globally unique registered ID per instance. This
+  also drops the phase-5 dependency: Playback no longer needs unit routing or
+  the subscriber registry, so it could move earlier if ever wanted.
 - Conformance (D-11): the loopback-identity vector — replayed frames
   bit-identical to captured frames, since nothing re-encodes.
 
-**Gate:** on a live system, a caller hears their own audio back, sourced from
-the playback ID, with correct timing — in **both** group mode (re-keyed onto
-the TGID) and unit mode (private reply to the caller). Depends on phase-5
-unit routing + subscriber registry.
+**Gate:** on a live system, a caller hears their own audio back on the
+talkgroup, sourced from the playback ID, with correct timing.
 
 ---
 

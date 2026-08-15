@@ -248,32 +248,34 @@ A **virtual adapter**: no wire, no socket, no peer. It implements the §1
 contract with a null transport and exists only to echo a caller's own audio
 back so they can hear how they sound. Optional and load-if-needed (D-23):
 absent from config, it does not exist. It is also the reference shape for
-any future no-wire endpoint (recorder, announcer).
+any future no-wire endpoint (recorder, announcer) — including D-26's
+addressing-authority constraint, which binds those too.
 
-- **Identity:** owns one real 24-bit radio ID from config, registered as a
-  known subscriber at `init` so unit calls addressed to it route to this
-  system. Every reply is sourced from this ID — the single fact that lets one
-  mechanism serve both group and unit.
+- **Group calls only (D-26).** Playback is never addressed by radio ID. A
+  federated design cannot consume identifiers from a namespace it does not
+  administer: TGID space is operator-scoped and bounded by bridge membership,
+  radio-ID space is globally administered and unit routing is unbounded, so
+  reachability-by-ID would demand a registered unique ID for every instance
+  ever deployed. See D-26 for the full argument.
+- **Identity:** owns one 24-bit radio ID from config, used solely as the
+  `src` of the streams it originates. It is **not** registered as a reachable
+  subscriber and nothing routes to it; one ID an operator already owns serves
+  every Playback instance they run.
 - **Capture (`egress` = sink):** as a bridge member for its configured
   TGID(s) the core hands it egress frames; it buffers one stream's canonical
   frames (CALL_START…VOICE…CALL_END, `vseq` as received). No wire encode — it
   keeps the canonical frames verbatim.
 - **Replay (`nx_core_ingress`):** after CALL_END (plus a configurable delay)
   it re-emits the buffered stream as a **new** stream — fresh `stream_tag`,
-  `src` = its own radio ID — with `dst` mirroring the inbound call type:
-  - **group in → group out:** re-key onto the same TGID (the talkgroup hears
-    it back);
-  - **unit in → unit out:** a private call back to the original caller's
-    `src`.
-  Same code path; only `dst` differs, and the core's normal routing (bridge
-  membership / unit route cache) delivers it. The core learns nothing about
-  playback.
+  `src` = its own radio ID, `dst` = the TGID it was captured from. The
+  talkgroup hears it back. Ordinary bridge membership delivers it; the core
+  learns nothing about playback.
 - **Clocking:** position-preserving clocked egress from the buffer (the D-17
   egress-clock discipline), on the loop, only while a playback is live —
   never on the per-frame routing hot path. malloc-free: the capture buffer is
   sized at `init` from a bounded max-capture-length config.
-- **Config:** radio ID; enabled mode(s) (group / unit / both); the TGID(s) or
-  bridge it answers on; replay delay; max capture seconds.
+- **Config:** radio ID; the TGID(s) or bridge it answers on; replay delay;
+  max capture seconds.
 - **Conformance (D-11):** the loopback identity vector — replayed frames are
   bit-identical to captured frames, since no re-encode occurs — is its test.
 

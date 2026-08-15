@@ -254,8 +254,8 @@ prevention (never-to-origin, unique membership) and OBP edge
 stream-dedupe stand; an optional phase-6 circuit breaker is available as
 configurable policy.
 
-## D-26 — Playback (talkback) is a virtual, transport-less adapter with its
-own radio ID
+## D-26 — Playback (talkback) is a virtual, transport-less adapter, and it
+answers group calls only
 
 A talkback — replay a caller's own audio so they hear how they sound — is an
 **optional adapter, not a core feature**. The core stays unaware of it
@@ -268,21 +268,55 @@ the stream instead of transmitting it, and it originates the reply through
 that the contract's seam is core-facing frame I/O, not wire I/O, and the
 template for other virtual endpoints later (recorder, announcer).
 
-It owns a **real 24-bit radio ID** (config), made known so unit calls
-addressed to it route in. The captured stream is replayed as a **new stream
-sourced from that ID**, which is exactly what collapses group and unit into
-one mechanism: the reply mirrors the inbound call type. A group call
-captured off a TGID is re-keyed onto that TGID from the playback ID
-(everyone on the talkgroup hears it back); a private call placed *to* the
-playback ID is answered with a private call *from* it back to the original
-source (an ordinary unit reply the route cache already knows how to
-deliver). Only the reply's `dst` differs — TGID vs. the caller's `src` — and
-the core's normal routing handles both; nothing about playback reaches the
-core. Replay is position-preserving clocked egress from a bounded,
-init-sized buffer (the D-17 egress-clock discipline), scheduled after
-CALL_END and running only while a playback is live — off the routing hot
-path, which is why this had to be a bolt-on standalone process in the Python
-era and does not here. It does no FEC or wire work (canonical frames only),
-so capture→replay is bit-identical and its conformance test is the loopback
+**Group calls only. Playback is never addressed by radio ID.** As a bridge
+member for its configured TGID(s) it captures a stream off that TGID and
+replays it re-keyed onto the same TGID, sourced from its own configured ID,
+so the talkgroup hears it back. That is the whole mechanism. A private call
+placed *to* a playback ID is not a supported way to reach it.
+
+The reason is addressing authority, and it is a standing constraint on this
+project, not a scope cut:
+
+> **A federated design cannot consume identifiers from a namespace it does
+> not administer.**
+
+TGID space is operator-scoped. An operator hands out talkback talkgroups
+inside their own network and bounds their reach with explicit bridge
+membership; no coordination with anyone else is required, and nothing
+escapes the rules. Radio-ID space is globally administered (radioid.net) and
+unit routing is unbounded by construction — a private call to an
+unknown destination floods until the target is located, and the resulting
+location map is global. For Playback to be reachable by ID, **every instance
+ever deployed** would have to hold a globally unique registered radio ID,
+issued to a licensed operator, for something that is neither a radio nor a
+repeater. Two instances sharing an ID anywhere in a connected mesh means
+private calls chase whichever one transmitted last.
+
+BrandMeister does exactly this (private call to 9990, per-master `MCC`997)
+and it works for them, because BrandMeister is a single administered network
+that is the sole authority over its own namespace. OmniLink assumes the
+opposite: an internet of independent routers, run by people who coordinate
+with each other only when they choose to. The precedent does not transfer.
+
+Playback still owns a **24-bit radio ID** (config) as the source of its
+replies — it appears in last-heard and in the LC of every stream it
+originates — but that ID is not required to be reachable, and one ID an
+operator already owns serves every Playback instance they run. Nothing
+routes *to* it.
+
+Replay is position-preserving clocked egress from a bounded, init-sized
+buffer (the D-17 egress-clock discipline), scheduled after CALL_END and
+running only while a playback is live — off the routing hot path, which is
+why this had to be a bolt-on standalone process in the Python era and does
+not here. It does no FEC or wire work (canonical frames only), so
+capture→replay is bit-identical and its conformance test is the loopback
 identity (FRAME.md §7). Per D-21 it adds no receiver-side behavior; it is an
 endpoint that happens to echo.
+
+The addressing-authority constraint above applies to every virtual endpoint
+this adapter is the template for. A recorder or an announcer reachable by
+radio ID has the same problem; reachable by talkgroup, it does not.
+
+*Revised 2026-08-15: unit-call support removed. The standalone C
+implementation (github.com/n0mjs710/dmr-talkback) reached the same
+conclusion during its build and is group-only for the same reason.*
