@@ -443,18 +443,24 @@ is the load-bearing one:
 Operators wanting two bridges joined join them. They do not do it
 implicitly through a shared single-talkgroup endpoint.
 
-**Precedent, and a note on scope.** The same structure appears in XLX
-reflectors, where one connection is one module, every module presents as
-TS2/TG9, and no module identifier exists in any frame — hblink3 gained
-XLX support on exactly this model (one system, one bridge, no TGID
-column, and a hard error if the system appears in `UNIT`). OmniLink has
-no XLX adapter specified; if one is ever added it inherits this decision
-unchanged. One difference worth carrying over: XLX's TS2/TG9 is a
-protocol constant where a wrong value is *silently fatal*, so hblink3
-makes it inexpressible rather than configurable. CC's local TGID is
-different — a wrong value there is visible (traffic under a consistent
-but unexpected talkgroup), so it is exposed.
+- **An XLX connection is not that either** (ADAPTERS.md §6). One
+  connection is one module, every module presents as TS2/TG9, and no
+  module identifier exists in any frame. Same structure, same rule.
 
-Unit calls: the CC-CC specification puts private calls out of scope
-entirely, so a CC system must never receive one. Config validation
-rejects it, for the same reason hblink3 rejects an XLX system in `UNIT`.
+The two single-talkgroup cases differ in one way that changes their
+config treatment. XLX's TS2/TG9 is a protocol constant whose wrong value
+is *silently fatal* — no acknowledgement exists and nothing on the wire
+carries module identity, so mis-sent traffic vanishes without symptom.
+It is therefore **injected** by config load and explicitly supplying it
+is an error. CC's local TGID is the opposite: a wrong value is visible
+(traffic under a consistent but unexpected talkgroup), and the protocol
+expects each end to configure it, so it is **exposed**. Same principle,
+opposite ergonomics, for a reason that is about observability rather
+than taste.
+
+Unit calls: both are excluded as unit-call targets, for different
+reasons. The CC-CC specification puts private calls out of scope
+entirely. For XLX the stakes are higher — module selection *is* a private
+call to 4001-4026, so a unit call reaching one could silently move the
+reflector into a different room for every user on it. Config validation
+rejects both.

@@ -65,6 +65,27 @@ correspondingly earlier. The gate proves the routing core, arbitration,
 hang, and retarget LC splicing — not a representation round trip, which
 no longer exists on this path.
 
+### Phase 2 rider — XLX adapter
+
+XLX is HBP outbound plus a module link (ADAPTERS.md §6), so it becomes
+available as soon as HBP peer mode works and is built here rather than
+waiting. Its gate is **separate and does not block the phase-2 audio
+gate**, because passing it requires finding a live reflector with an
+observable dashboard, which is a scheduling dependency rather than an
+engineering one.
+
+- Link construction with the five xlxd acceptance gates asserted as unit
+  tests (port hblink3's `tests/test_xlx_link.py`, which already encodes
+  them), including the reference vector that reproduces a known-good link
+  burst byte-for-byte.
+- Config validation: module letter A–Z, module numbers rejected with the
+  remedy, TS2/TG9 injection, one-bridge and no-unit-target rules.
+
+**Gate:** connect to a public XLX reflector, confirm on *that reflector's*
+dashboard that the expected module was joined, and pass audio both ways to
+a bridged HBP system. Note the local daemon cannot self-verify this — no
+acknowledgement exists (ADAPTERS.md §6.3).
+
 ## Phase 3 — Replay harness + dashboard v1
 
 *(PORT removed per D-07; federation is OBP, already built in phase 2.)*

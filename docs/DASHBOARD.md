@@ -73,7 +73,7 @@ One JSON object per event, single line:
 ```
 
 Envelope fields (always): `seq`, `ts` (wall, float s), `sub` (subsystem:
-`core`,`hbp`,`ipsc`,`obp`,`cc`), `sys` (system name or absent),
+`core`,`hbp`,`ipsc`,`obp`,`cc`,`xlx`), `sys` (system name or absent),
 `ev`, `lvl` (`debug|info|warn|error`).
 
 Vocabulary (phase-1 set; append-only; consumers must ignore unknown `ev`
@@ -90,6 +90,7 @@ and unknown fields). Plane: S = systems, B = bridge, G = global.
 | `loop_suspected` | B | bridge, src, systems involved, capture count/gaps — **alarm-class**: surface prominently (D-25) | core |
 | `slot_busy`, `pfmt_unsupported`, `peer_down` | S | system, slot, dropped stream, holder (incl. local holders) — the **outcome** half; join with `call_start` intent (D-15) | adapters |
 | `bridge_member_state` | B | bridge, member, enabled, cause (reserved for phase-6 dynamic rules: timeout/trigger/reset) | core |
+| `xlx_link_sent` | S | module, target tgid, unlink-then-link — **attempt only**: XLX never acknowledges a link and no frame carries a module identity, so this must never be rendered as confirmed state (ADAPTERS.md §6.3) | xlx |
 | `unbridged`, `unit_no_route`, `malformed` | G | rate-limited diagnostics | both |
 | `stats` | S+G | per-system counter snapshot, 10 s cadence | adapters + core; event module caches latest per system for snapshot replay |
 

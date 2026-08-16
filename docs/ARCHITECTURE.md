@@ -31,7 +31,7 @@ below is the simplest one that works.
                  │                                         │
    UDP sockets ──┤  adapter instances        core          │
    TCP (CC) ─────┤  (hbp, ipsc, obp,   ◀──▶ (routing,     │
-   timers ───────┤   cc)                      streams,     │
+   timers ───────┤   cc, xlx)                 streams,     │
    unix socket ──┤                            bridges)     │
                  │            │                  │         │
                  │            └──▶ event module ◀┘         │
@@ -140,7 +140,7 @@ omnilink/
 │   ├── dmr/                    # libdmrdsp, lifted from ipsc2hbpc unchanged
 │   └── adapters/
 │       ├── adapter.h           # the adapter contract (ADAPTERS.md §1)
-│       ├── hbp.c  ipsc.c  obp.c  cc.c  playback.c
+│       ├── hbp.c  ipsc.c  obp.c  cc.c  xlx.c  playback.c
 ├── dashboard/                  # Python (DASHBOARD.md)
 ├── docs/
 └── tests/                      # unit tests + golden vectors + replay

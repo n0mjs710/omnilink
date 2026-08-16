@@ -266,27 +266,128 @@ sockets non-blocking via `ev_loop`.
   boundary (`extract_ambe()` → `cccc_ambe_pack21()` and its inverse)
   against HBP burst form, so it ports as a lift rather than a rewrite.
 
-## 6. *(withdrawn)* PORT — OmniLink native trunk
+## 6. XLX — reflector module link
 
-Removed with D-07. Federation between OmniLink instances is **OBP**: with
-the burst as the frame payload (D-02) an OBP hop is near-passthrough, so
-PORT's zero-translation-loss argument no longer distinguishes it. What
-OBP does not carry the far end re-derives — `origin_system` from the
-receiving peer, `vseq` from burst structure, flags from the LC.
+*(PORT previously occupied this slot; it is withdrawn per D-07, which
+records the reasoning. XLX takes the number so cross-references to §7 and
+§9 stay stable.)*
 
-Two things PORT also provided, and where they went:
+**XLX's DMR interface is the homebrew protocol, unmodified.** DMRGateway
+uses the same `CDMRNetwork` class for XLX and BrandMeister and its network
+layer contains no XLX conditionals. So this adapter is HBP outbound plus
+one thing: an in-band private call at connect that selects the module.
 
-- **External integration** (recorder, analytics feed) — the event bus
-  (D-09, DASHBOARD.md), which is where truth already lives. A consumer
-  needing traffic rather than events attaches as an OBP peer.
-- **No-radio test injection** — the replay harness feeds captures into
-  adapters directly, which is a better test anyway: it exercises the
-  adapter under test rather than a second adapter written to be easy.
+- **Reuse:** the HBP adapter's peer-mode engine in full (§2) — login,
+  keepalives, DMRD codec, stream mapping. This adapter adds the module
+  link, the fixed TS2/TG9 binding, and its own config validation. It is a
+  distinct adapter type for config clarity, event attribution (`sub:
+  "xlx"`), and its own conformance vectors — not because the protocol
+  differs.
+- **Reference implementation:** hblink3's `send_xlx_link()` /
+  `xlx_link_module()` and `tests/test_xlx_link.py`, which encode xlxd's
+  acceptance gates as assertions. Port the tests with the code.
 
-The frame layout remains trunk-capable (FRAME.md §6.1), so PORT can
-return without redesign if OBP ever limits federation. Both ends of an
-OmniLink↔OmniLink link are ours, so extending OBP is also available and
-has precedent (`PRESERVE_SOURCE_PEER`).
+### 6.1 The module link
+
+Two calls at connect, **unlink (4000) first, then the module**, five
+DMRD frames each sharing one stream ID: 3× VOICE_LC_HEADER then
+2× TERMINATOR_WITH_LC.
+
+The unlink is not defensive. While a client already holds a module, xlxd
+discards a link naming a different one and rewrites the header to the
+module already held (`cdmrmmdvmprotocol.cpp:297-325`), so on any
+reconnect where the prior binding survives, link-only silently leaves us
+in the old room.
+
+Fires on **every** entry to the connected state — the binding is
+per-session state on xlxd and is lost on any re-login.
+
+xlxd validates each frame and **drops silently on any failure** — no
+NAK, no response of any kind (`cdmrmmdvmprotocol.cpp:636-655`):
+
+| # | Gate | Value |
+|---|---|---|
+| 1 | packet size | **exactly 55 bytes** — 20 header + 33 burst + 2 trailing pad |
+| 2 | `data[15] & 0x30 >> 4` | `2` (DATA_SYNC) |
+| 3 | `data[15] & 0x80` | set — TS2 |
+| 4 | `data[15] & 0x0F` | `1` (VOICE_LC_HEADER) |
+| 5 | sync at `data[33..39]` | BS or MS data sync |
+
+Gate 1 means the burst must be padded to 55; a bare 53-byte DMRD is
+rejected. Gate 4 means **only the three header frames carry the command** —
+the terminators are slot type 2 and are ignored as commands, but are sent
+to frame the call correctly.
+
+Build the LC honestly from the same src/dst as the DMRD header
+(FRAME.md §4.1 rule 1). xlxd reads the destination from header bytes 8-10
+and never decodes the LC — its BPTC decode is commented out at
+`:657-660` — so a contradictory LC would work, and must still not be
+shipped: it is invisible to every test that does not decode audio.
+
+**This is protocol machinery, not frame synthesis.** The link never
+becomes an `nx_frame` and never enters the core; it is emitted by the
+adapter directly to its socket, exactly like a login or a keepalive. The
+"nothing synthesizes frames" rule (D-16, CLAUDE.md) is about fabricating
+call content into the routing path and is not weakened here. See
+DEVIATIONS.md for the reading that prompted this note.
+
+### 6.2 Binding, config, and what is not configurable
+
+- **Static module binding only.** No runtime module selection, no
+  reflector switching, no end-user control — that breaks the nailed-up
+  systems/bridges model. DMRGateway is the correct tool for
+  user-selectable modules at a repeater or hotspot. Different, not worse.
+- **One module per connection; exactly one bridge (D-27).** Every module
+  presents as TS2/TG9 and no module identifier exists in any frame, so
+  the connection *is* the bridge identity. To bridge two modules,
+  configure two systems.
+- **TS2/TG9 is injected by config load, never read from config.** A wrong
+  value here is *silently fatal* — no ACK exists and no frame carries a
+  module identity, so mis-sent traffic simply vanishes with no
+  observable symptom. The member entry therefore omits `tgid` and `slot`
+  entirely and config load supplies them; supplying either explicitly is
+  a config error naming the remedy.
+
+```toml
+[[system]]
+name       = "XLX950-D"
+protocol   = "xlx"
+server     = "xlx950.example.org:62030"
+passphrase = "passw0rd"
+module     = "D"          # A-Z; the only XLX-specific key
+radio_id   = 3120001
+colorcode  = 1            # carried in the link burst's slot type
+
+[[bridge]]
+name   = "STATEWIDE"
+member = [
+  { system = "KS-DMR-HBP", tgid = 3120, slot = 1 },
+  { system = "XLX950-D" },                          # tgid/slot injected
+]
+```
+
+- `module` validates as a single letter A–Z. Module *numbers* (4004 and
+  the like) are rejected outright with the remedy in the message —
+  hblink3's predecessor took numbers, so a migrating operator will try it.
+- **Never a unit-call target.** Module selection *is* a private call to
+  4001–4026, so a unit call reaching an XLX system could silently move
+  the reflector into a different room for every user connected to it.
+  Config load rejects it (ROUTING.md §8), which is the only guard needed:
+  the core never routes `NXF_UNIT` anywhere but a cached single target.
+
+### 6.3 Operational truth
+
+There is no acknowledgement of the link and nothing on the wire states
+which module a connection is in. The `xlx_link_sent` event (module,
+target TGID, unlink-then-link) is therefore the **only** local evidence
+the link was attempted, and the dashboard must present it as such rather
+than as a confirmed state. Verification is the reflector's own dashboard.
+
+Note also that a stock xlxd is built with `NB_OF_MODULES 10` (modules
+A–J); `NB_MODULES_MAX 26` exists but is commented out. A–Z is accepted
+because the protocol allows it and operators can rebuild, but a module
+the reflector does not have produces no link and no error — one more
+reason §6.3 exists.
 
 ## 7. Playback — virtual talkback adapter (no transport) (D-26)
 

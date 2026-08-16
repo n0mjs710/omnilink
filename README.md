@@ -26,6 +26,7 @@ bridge rules, with one dashboard and one log.**
 | IPSC (peer and master) | MOTOTRBO repeater systems |
 | OpenBridge | Brandmeister, HBlink3/4, IPSC2, anything OBP |
 | CC-CC | c-Bridges |
+| XLX | XLX reflector modules |
 
 Today, bridging a MOTOTRBO system to a c-Bridge talkgroup and an MMDVM
 network means chaining daemons — a DMRlink here, an HBlink there, a
@@ -129,6 +130,7 @@ For implementers and the deeply curious, in reading order:
 6. [`docs/STYLE.md`](docs/STYLE.md) — implementation conventions (binding)
 7. [`docs/DECISIONS.md`](docs/DECISIONS.md) — design rationale (settled; numbered anchors)
 8. [`PLAN.md`](PLAN.md) — phased build plan with acceptance gates
+9. [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) — where implementation met the docs and something gave
 
 The design is settled. Questions and (once code exists) bug reports are
 welcome; the decision records in `docs/DECISIONS.md` document why things

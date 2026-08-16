@@ -9,7 +9,7 @@ this file happens in the core module, on the daemon's single thread
 ## 1. Vocabulary
 
 - **System** — one configured protocol instance (an HBP master, an IPSC
-  network, an OBP peer, a CC conduit). Immutable table,
+  network, an OBP peer, a CC conduit, an XLX module connection). Immutable table,
   indexed by `origin_system` u16.
 - **Bridge** — a named conference. The unit of routing. Members are
   `(system, tgid, slot, enabled)` tuples. A bridge is the *only* way
@@ -239,9 +239,10 @@ member    = [
 
 Config load validates: unique system names, unique `(system, tgid)` across
 all bridges, slot present iff the member's protocol is slotted,
-**single-talkgroup systems (CC conduits) appearing in at most one bridge
-and never as a unit-call target (D-27)**, and builds the immutable tables
-of ARCHITECTURE.md §5. Validation errors must name
+**single-talkgroup systems (CC conduits, XLX connections) appearing in at
+most one bridge and never as a unit-call target (D-27)**, **XLX members
+carrying no explicit `tgid`/`slot` (injected as 9/2, ADAPTERS.md §6.2)**,
+and builds the immutable tables of ARCHITECTURE.md §5. Validation errors must name
 the offending line *and the remedy* — in particular, the duplicate
 `(system, tgid)` rejection (D-05) must say plainly that one TGID on one
 system belongs to exactly one bridge, and that a per-slot split (an
