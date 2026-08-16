@@ -13,7 +13,7 @@ Its design ceiling is **~100 configured systems per instance**. It is
 explicitly *not* a platform for running a worldwide network, and a single
 install will never carry several statewide networks' full traffic loads:
 past the ceiling, deployments **should** federate multiple instances over
-PORT — not for performance, but for resilience (too many eggs in one
+OBP — not for performance, but for resilience (too many eggs in one
 basket is an operational failure mode regardless of CPU headroom).
 
 Sizing at the ceiling: 100 systems carrying a generous 200 concurrent
@@ -31,7 +31,7 @@ below is the simplest one that works.
                  │                                         │
    UDP sockets ──┤  adapter instances        core          │
    TCP (CC) ─────┤  (hbp, ipsc, obp,   ◀──▶ (routing,     │
-   timers ───────┤   cc, port)                streams,     │
+   timers ───────┤   cc)                      streams,     │
    unix socket ──┤                            bridges)     │
                  │            │                  │         │
                  │            └──▶ event module ◀┘         │
@@ -139,7 +139,7 @@ omnilink/
 │   ├── dmr/                    # libdmrdsp, lifted from ipsc2hbpc unchanged
 │   └── adapters/
 │       ├── adapter.h           # the adapter contract (ADAPTERS.md §1)
-│       ├── hbp.c  ipsc.c  obp.c  cc.c  port.c
+│       ├── hbp.c  ipsc.c  obp.c  cc.c
 ├── dashboard/                  # Python (DASHBOARD.md)
 ├── docs/
 └── tests/                      # unit tests + golden vectors + replay

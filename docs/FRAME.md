@@ -1,10 +1,17 @@
-# FRAME.md — Canonical Frame Specification (normative)
+# FRAME.md — Frame Specification (normative)
 
-The canonical frame `nx_frame` is the contract between every adapter and
-the core, and (via the PORT adapter) the wire unit between cores. Get
-this file right and every adapter becomes independently testable; every
-AMBE-garble class of bug becomes localized to exactly one adapter's
-conformance vectors.
+The frame `nx_frame` is the contract between every adapter and the core.
+Get this file right and every adapter becomes independently testable;
+every AMBE-garble class of bug becomes localized to exactly one
+adapter's conformance vectors.
+
+**The payload is the 33-byte on-air DMR burst (D-02).** The frame is a
+carrier for routing metadata the burst has nowhere to put —
+`origin_system`, a core-assigned `stream_tag`, flags — not a neutral
+re-encoding of the voice. HBP and OBP adapters move the burst through
+untouched; IPSC and CC adapters translate at the edge. The frame is
+in-process only; federation is OBP (D-07), though the layout remains
+trunk-capable should that change.
 
 **The frame speaks DMR (D-24).** OmniLink is a DMR application, not a
 digital-mode-agnostic one: IDs are DMR's 24-bit space, burst position is
@@ -14,10 +21,11 @@ adapter's job to speak DMR semantics to the core — such adapters are
 expected to be rare, infrastructure-to-infrastructure, and never
 repeater-facing.
 
-All multi-byte scalars are **little-endian** everywhere (in-process and
-PORT wire). Total size is fixed: **64 bytes — one cache line** — a
-28-byte header + 36-byte payload area, sized to the largest thing DMR
-can hand us (a tagged 33-byte burst, §4.4).
+All multi-byte scalars are **little-endian**. Total size is fixed:
+**64 bytes — one cache line** — a 28-byte header + 36-byte payload area,
+sized to the largest thing DMR can hand us, a tagged 33-byte burst. That
+sizing predates the D-02 revision and is why carrying the burst needed
+no layout change.
 
 ## 1. Layout
 
@@ -50,14 +58,15 @@ shift/mask accessor macros for the packed fields.
 ### 1.1 Packed-field semantics
 
 - `ver` (4 bits): header-layout version, NX_VER = 1. Unknown `ver` →
-  drop (PORT peers report version in keepalives, so a mismatch is one
-  loud event, not silent loss).
+  drop. In-process this can only fire during a partial rebuild, but the
+  check is kept: it is what makes the layout safe to put on a wire later
+  (D-07).
 - `pfmt` (4 bits): payload format per type, §2.1.
 - `vseq` (3 bits): DMR voice-superframe burst position, 0–5 = A–F,
   7 = unknown. Assigned **exactly once, at ingress** — read from wire
   structure where the origin protocol has it (HBP, IPSC, OBP; ingress
   must classify position anyway to harvest embedded LC, so it is free),
-  7 where it does not (CC, foreign PORT implementations). Egress
+  7 where it does not (CC). Egress
   adapters that emit burst structure follow it faithfully (sync at A,
   EMB + embedded-LC fragment at B–F); on 7 they fall back to a local
   per-stream A–F counter. Position is preserved, not re-counted,
@@ -84,7 +93,7 @@ time (D-17).
 | value     | name        | payload |
 |-----------|-------------|---------|
 | 0x01      | CALL_START  | 9-byte LC (§4.2) — only when a real header was received |
-| 0x02      | VOICE       | 21-byte AMBE triplet (§4.1) |
+| 0x02      | VOICE       | 33-byte DMR burst (§4.1) |
 | 0x03      | CALL_END    | 9-byte LC + LE u64 frame count (§4.3) — only on a real terminator |
 | 0x04      | DATA_BURST  | tag + opaque 33-byte burst (§4.4, phase 6) |
 | 0x05      | TALKER_META | reserved: talker alias / GPS (phase 6) |
@@ -107,7 +116,7 @@ typed payloads through an **unchanged core**: the core never interprets
 `(type, pfmt)` drops the frame with a `pfmt_unsupported` event. New
 values are allocated in this file, per type, append-only. Per D-24,
 payload kinds are DMR's: a foreign-mode adapter translates to these, or
-carries its traffic opaquely over PORT between its own kind only.
+carries its traffic opaquely between its own kind only.
 
 ## 3. Flags
 
@@ -124,20 +133,44 @@ produce events, not frames (D-16, D-21).
 
 ## 4. Payloads
 
-### 4.1 VOICE — 21 bytes
+### 4.1 VOICE — 33 bytes
 
-Three 49-bit AMBE+2 vocoder frames, FEC-stripped and de-interleaved
-(`dmr_ambe_72_to_49` output), in burst order, each packed MSB-first into
-7 bytes (low 7 bits of byte 6 zero). The bit order is *defined as*
-whatever `dmr_bits_to_bytes(dmr_ambe_72_to_49(x))` produces — the
-existing tested code in `dmr/` is the reference implementation, not
-prose. 49-bit is the canonical form because it is the least common
-denominator already in service: IPSC natively carries it (D-02).
+The on-air DMR burst, verbatim: 264 bits as HBP and OBP carry them,
+including FEC, interleave, EMB, sync or embedded-LC fragment, and slot
+type. No re-encoding (D-02).
 
 ```
-payload[0..6]  frame 1   payload[7..13] frame 2   payload[14..20] frame 3
-payload_len = 21
+payload[0..32]  the 33-byte burst
+payload_len = 33
 ```
+
+For **HBP and OBP** this is a copy — ingress and egress touch the burst
+only where routing requires it. For **IPSC and CC**, which carry bare
+3×49-bit AMBE, the adapter builds the burst on ingress and reduces it on
+egress; `dmr/` implements every primitive (`dmr_ambe_49_to_72` and its
+inverse, BPTC, Golay/QR slot type, sync tables).
+
+Two rules for adapters that must *construct* a burst:
+
+1. **Header and payload must agree.** The burst's LC carries src and dst
+   redundantly with the frame header. They are patched together or not
+   at all. A burst whose LC contradicts its header is the single most
+   expensive class of bug this project can ship — it survives every test
+   that does not decode audio, and it has been shipped before in this
+   ecosystem.
+2. **Invented fields come from real configuration.** Colour code, sync
+   flavour, and EMB are not present in IPSC or CC traffic and must be
+   synthesized. They come from the system's configured values. Never
+   from a captured constant.
+
+### 4.1.1 Retargeting
+
+When a stream is delivered to a member whose TGID differs from the
+frame's, the burst's LC and embedded-LC fragments carry the old dst and
+must be rewritten. Generate the replacement LCs **once per stream per
+target**, then splice per burst by position — do not rebuild per packet.
+`hblink3`'s `gen_lcs()` / `embed_lc()` pair is the reference
+implementation of exactly this and is known-correct in production.
 
 ### 4.2 CALL_START — 9 bytes
 
@@ -168,9 +201,14 @@ world's steady state (D-21).
 ### 4.4 DATA_BURST — 34 bytes (phase 6; type reserved now)
 
 Byte 0: burst tag (DMR data sync burst type), bytes 1–33: the raw
-264-bit on-air burst. Voice reduces to canonical AMBE; data cannot be
-reduced without loss, so it rides opaque and is only deliverable to
-burst-native adapters (HBP, IPSC). Not routed in phases 1–5.
+264-bit on-air burst.
+
+Since the D-02 revision this differs from VOICE only by the leading tag
+— both carry a burst. The types stay distinct because their *routability*
+differs, not their encoding: voice is deliverable everywhere (adapters
+that cannot carry bursts natively reduce it), while data cannot be
+reduced without loss and is therefore deliverable only to burst-native
+adapters (HBP, OBP, IPSC). Not routed in phases 1–5.
 
 ## 5. Stream identity
 
@@ -245,7 +283,10 @@ ships, before it is declared done:
 2. **Egress vectors:** `nx_frame` sequence → expected wire packets,
    byte-exact.
 3. **The loopback identity:** for burst-native protocols,
-   ingress(egress(f)) reproduces the canonical AMBE bits exactly.
+   ingress(egress(f)) reproduces the burst bits exactly. For IPSC and
+   CC, whose native form is 3x49-bit AMBE, the identity is on the AMBE
+   bits: the synthesized burst fields are not round-tripped and must
+   not be asserted on.
 
 Vector sources: paired live captures, cross-checks against dmr_utils3
 for HBP/IPSC framing, and `cccc_ambe.c`'s golden data for CC.

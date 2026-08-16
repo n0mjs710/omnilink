@@ -9,18 +9,71 @@ a design change, not a discussion prompt.
 
 The project is **OmniLink**, in the hblink/dmrlink family tradition.
 
-## D-02 — Canonical voice = 3×49-bit AMBE, FEC/interleave stripped
+## D-02 — The frame payload is the 33-byte DMR burst; HBP is the core's
+## native representation
 
-49-bit AMBE is the **least common denominator already in service**: IPSC
-natively carries it, so the canonical form is IPSC's form and HBP/OBP's
-72-bit FEC'd representation is the derived one. We normalize to the
-simplest existing representation, not an invented one. Accepted
-consequences: egress to burst protocols re-encodes FEC and re-synthesizes
-EMB/sync (µs-scale; `dmr/` implements all of it); FEC's error-correction
-benefit is consumed at ingress (loses nothing real on IP transport); data
-calls can't be canonicalized (D-06). Wins: every adapter fully owns its
-bit conventions — cross-protocol representation bugs become per-adapter
-and vector-testable (D-11) — and PORT trunking is translation-lossless.
+*(Revised 2026-08-16. Supersedes the original D-02, which made the
+payload a 21-byte triplet of 49-bit AMBE with FEC and interleave
+stripped. The reasoning that replaced it is recorded here because it is
+the kind of decision that gets re-litigated.)*
+
+Voice rides the core as the **33-byte on-air DMR burst**, unmodified —
+the same representation HBP and OBP carry. IPSC and CC adapters
+translate to and from it at the edge.
+
+The original choice was defensible: 49-bit AMBE is the least common
+denominator already in service, and two of four adapters (IPSC, CC)
+carry it natively. But it made the core a **neutral intermediate
+representation**, and that is the architectural shape of a
+general-purpose media router, not of a DMR call router. It is also the
+shape whose costs land in the wrong place.
+
+**The cost is not created or destroyed by this choice, only located.**
+Converting between the two representations is a full burst teardown and
+rebuild — FEC strip/re-encode plus EMB, sync, slot type, and LC
+re-synthesis — and each design pays it on paths where the core's
+representation is not the endpoints' :
+
+| path | canonical 49-bit | burst-native |
+|---|---|---|
+| HBP→HBP, HBP→OBP, OBP→OBP | 2 conversions | **0** |
+| IPSC→HBP, CC→HBP | 1 | 1 *(tie)* |
+| IPSC→IPSC, CC→CC, IPSC→CC | **0** | 2 |
+
+Mixed paths tie. The decision is therefore only ever about which
+*same-protocol* path carries the traffic — and HBP+OBP carries every
+MMDVM repeater, every hotspot, and (per the revised D-07) all
+instance-to-instance federation. IPSC and CC systems are bridged *into*
+that network, which is the tie row. Bridging two legacy systems to each
+other through OmniLink is the c-Bridge use case and it is shrinking, so
+this decision gets more right over time, not less.
+
+Second reason, independent of cycles: **the hard adapters already exist
+in C, written to this exact boundary.** `ipsc2hbpc` is in production and
+`cc2obp` carries the hard-won CC AMBE de-interleave fix. Against a
+burst-native core those are lifts; against an invented representation
+they are rewrites against a form that has never been on the air.
+
+Accepted costs, knowingly:
+
+- Legacy↔legacy paths pay two conversions where they would have paid
+  none. Lossless (the 72-bit FEC is derived from the 49 bits, so
+  49→72→49 recovers exactly) — wasted cycles, not degraded audio, at
+  µs scale under the D-22 ceiling.
+- **The core is no longer representation-neutral.** HBP's LC-in-payload
+  duplication — src/dst appearing in both the header and the burst LC —
+  becomes a permanent core concern rather than something an adapter
+  encapsulates, and keeping the two in sync on every retarget is a real
+  and recurring bug class. HBlink3 solves it with per-stream precomputed
+  LCs; that approach is the reference.
+- A legacy→legacy path synthesizes burst fields (colour code, sync, EMB,
+  LC) that no downstream consumer reads. Bounded, but it is invented
+  data, so it is built from real configured values, never canned.
+
+Unchanged by this revision: the frame abstraction itself. The core still
+needs `origin_system`, a core-assigned `stream_tag`, and flags that a
+DMRD packet has nowhere to put. What was dropped is the neutral payload
+*representation*, not the frame.
 
 ## D-03 — HBlink4 stays separate; subscriptions are a delivery limiter,
 never a router
@@ -70,13 +123,34 @@ between burst-native adapters; specific ETSI data kinds can be promoted
 to typed payloads later without touching the core, which never parses
 payloads (D-14).
 
-## D-07 — PORT: the canonical frame over UDP as the native trunk
+## D-07 — OBP is the trunk; PORT is deferred, not forbidden
 
-Core↔core interconnect (the D-22 federation mechanism), external-tool
-integration point, and the no-radios test-injection harness. Zero
-translation loss — the canonical frame crosses untouched with origin
-metadata intact. HMAC-SHA1 auth per D-19. The designated path for
-anything that wants lossless canonical access.
+*(Revised 2026-08-16. Supersedes the original D-07, which specified PORT
+— the canonical frame over UDP — as the native core↔core trunk.)*
+
+The D-22 federation mechanism is **OpenBridge**. With the burst as the
+frame payload (D-02), an OBP hop is near-passthrough, so PORT's original
+selling point — zero translation loss — is no longer a differentiator.
+What an OBP hop does not carry (`origin_system`, `vseq`, flags) the far
+end re-derives: `origin_system` from which OBP peer the traffic arrived
+on, `vseq` from burst structure, flags from the LC. Nothing is lost;
+some things are recomputed.
+
+Deleting PORT removes an adapter, a wire format, and an auth scheme
+(D-19, also deleted) from a project whose scope is deliberately modest.
+
+**The door is left open deliberately.** The 64-byte frame remains
+trunk-capable — it is a `memcpy` plus HMAC away from being a wire unit —
+so if OBP ever limits federation, PORT can return without redesign. That
+is a low risk for a reason worth recording: repeater-facing OBP must
+interoperate with BrandMeister and DMR+, but **both ends of an
+OmniLink↔OmniLink link are ours**, so OBP can be extended there without
+anyone's cooperation. That has already been done once, in hblink3 and
+cc2obp, with `PRESERVE_SOURCE_PEER`.
+
+Consequences: no PORT adapter, no PORT test-injection harness (the
+replay harness reads captures into adapters directly), and external
+tools integrate over the event bus (D-09) rather than a traffic port.
 
 ## D-08 — License GPLv3, N0MJS copyright
 
@@ -127,6 +201,11 @@ Expansion reserves are layered cheapest-first (FRAME.md §6.1). Packed
 fields use shift/mask accessors, never C struct bitfields. The frame is
 64 bytes — one cache line.
 
+Unaffected by the D-02 revision: the 36-byte payload area was already
+sized for a tagged 33-byte burst, so carrying the burst needs no layout
+change. The policy now matters mainly in-process rather than on a wire
+(D-07), but it is what keeps PORT reintroducible without redesign.
+
 ## D-15 — Slot truth lives at the adapter; delivery truth via events
 
 Slot state cannot live in the core: local in-system traffic occupies
@@ -176,20 +255,19 @@ mode — it replicates its own core-egress traffic like any speaking peer
 and tracks slot occupancy from observed peer traffic so it never
 transmits into a busy slot.
 
-## D-19 — PORT peer identification: HMAC-SHA1 default, `auth = "none"`
-option
+## D-19 — *(withdrawn 2026-08-16)* PORT peer identification
 
-Identification, not secrecy: a bare UDP port feeding transmitters is
-spoofable from off-path, so a keyed tag is the lightest thing that
-actually identifies. HMAC-SHA1 is the exact routine OBP already uses
-(`crypto.c` ships regardless); `none` is for VPN/trusted paths.
+Specified HMAC-SHA1 authentication for the PORT trunk. Withdrawn with
+PORT itself (D-07). Federation authenticates as OBP already does — the
+same HMAC-SHA1 routine, reached through the OBP adapter rather than a
+second scheme. `crypto.c` ships regardless.
 
 ## D-20 — One routing core with N protocol edges, not federated
 per-protocol daemons
 
 The alternative — separate C daemons per protocol joined by a
 purpose-built trunk — does not avoid the hard design: such a trunk *is*
-the canonical frame, so the design work is identical and the federation
+the frame, so the design work is identical and the federation
 merely duplicates the routing core around it while preserving the known
 operational pains (rules multiplication across daemons, dashboard
 divergence, boundary metadata hacks, per-boundary bit-convention risk,
@@ -214,7 +292,7 @@ federate beyond
 OmniLink is not a platform for worldwide networks, and a single install
 will never carry several statewide networks' full loads. Design ceiling
 ~100 configured systems per instance; past that, federate instances over
-PORT — for resilience (too many eggs in one basket), not performance.
+OBP (D-07) — for resilience (too many eggs in one basket), not performance.
 This scope is what makes D-04 correct rather than merely acceptable.
 
 ## D-23 — Policy lives in the core; mechanism lives at the edge
@@ -308,9 +386,9 @@ Replay is position-preserving clocked egress from a bounded, init-sized
 buffer (the D-17 egress-clock discipline), scheduled after CALL_END and
 running only while a playback is live — off the routing hot path, which is
 why this had to be a bolt-on standalone process in the Python era and does
-not here. It does no FEC or wire work (canonical frames only), so
-capture→replay is bit-identical and its conformance test is the loopback
-identity (FRAME.md §7). Per D-21 it adds no receiver-side behavior; it is an
+not here. It does no FEC or wire work — it buffers and replays frames as
+received — so capture→replay is bit-identical and its conformance test is
+the loopback identity (FRAME.md §7). Per D-21 it adds no receiver-side behavior; it is an
 endpoint that happens to echo.
 
 The addressing-authority constraint above applies to every virtual endpoint
@@ -320,3 +398,50 @@ radio ID has the same problem; reachable by talkgroup, it does not.
 *Revised 2026-08-15: unit-call support removed. The standalone C
 implementation (github.com/n0mjs710/dmr-talkback) reached the same
 conclusion during its build and is group-only for the same reason.*
+
+## D-27 — Multi-bridge membership requires a wire discriminator;
+## endpoints join exactly one bridge
+
+*(Added 2026-08-16.)*
+
+A system may be a member of **more than one bridge only if its wire
+format carries a discriminator that identifies which bridge a given
+stream belongs to.** In practice that discriminator is the TGID.
+
+- **OBP** carries a TGID per stream, so one peer on many bridges is
+  unambiguous in both directions. Config is nested:
+  `{system: {bridge: tgid}}`.
+- **XLX modules and CC-CC conduits *are* their bridge identity.** One
+  connection carries one room or one talkgroup, and nothing on the wire
+  distinguishes it — XLX presents every module as TS2/TG9 with no module
+  identifier in any frame, and the CC-CC specification states plainly
+  that TGID "is not carried end-to-end; each end maps the conduit to its
+  own configured TGID." These join **exactly one bridge**. Config is
+  flat: `{system: bridge}` for XLX, `{conduit: (bridge, tgid)}` for CC.
+
+Two independent failures follow from allowing otherwise, and the second
+is the load-bearing one:
+
+1. **Ingress is ambiguous.** A stream arrives on the connection with
+   nothing to say which bridge it belongs to, so the core would have to
+   fan it to both — one stream becomes two. This is the same ingress
+   fork already prohibited for OBP when one TGID maps to two bridges.
+2. **Coherent egress would require U-turn replication.** Traffic
+   arriving at the endpoint *from* bridge A belongs, if the endpoint is
+   also on bridge B, on B as well. Delivering it would mean replicating
+   and reversing direction inside the core. Decline that and the
+   topology is incoherent in a way no operator would predict: A and B
+   both reach the far system but never each other. Accept it and the
+   endpoint has become a bridge-joiner — which is what a bridge already
+   is. Out of scope, permanently.
+
+Operators wanting two bridges joined join them. They do not do it
+implicitly through a shared single-talkgroup endpoint.
+
+Note the CC conduit still declares a local TGID. That value is the
+conduit's **core-side identity**, not a bridge selector — it is what the
+CC-CC protocol expects each end to configure independently. Unlike the
+XLX case, a wrong value here is benign and visible: traffic appears
+under a consistent but unexpected talkgroup rather than vanishing. That
+is why CC exposes it and XLX does not (TS2/TG9 is a protocol constant
+and a wrong value there is silently fatal).

@@ -26,7 +26,6 @@ bridge rules, with one dashboard and one log.**
 | IPSC (peer and master) | MOTOTRBO repeater systems |
 | OpenBridge | Brandmeister, HBlink3/4, IPSC2, anything OBP |
 | CC-CC | c-Bridges |
-| PORT (native trunk) | other OmniLink instances, external tools |
 
 Today, bridging a MOTOTRBO system to a c-Bridge talkgroup and an MMDVM
 network means chaining daemons — a DMRlink here, an HBlink there, a
@@ -38,13 +37,20 @@ coordinated edits across several systems.
 
 ## How it works
 
-**Everything becomes one internal format at the edge.** Each protocol is
-handled by an adapter that reduces incoming voice to a small canonical
-frame: the three AMBE vocoder frames of a DMR burst (FEC stripped) plus
-routing metadata — source ID, talkgroup or destination ID, originating
-system and repeater. On the way out, the destination adapter rebuilds
-full protocol framing. All protocol knowledge lives at the edges; the
-router in the middle is protocol-blind.
+**Voice moves as the DMR burst itself.** Internally a call is carried as
+the same 33-byte on-air burst that HBP and OpenBridge already put on the
+wire, plus routing metadata — source ID, talkgroup or destination ID,
+originating system and repeater. HBP and OpenBridge traffic therefore
+passes through without being taken apart and rebuilt; the two legacy
+protocols that carry bare vocoder frames, IPSC and CC-CC, translate at
+their own edge. All protocol knowledge lives at the edges; the router in
+the middle is protocol-blind.
+
+The alternative — inventing a neutral internal format everything
+converts into — was the original design and was dropped before any code
+was written. It made the common path (MMDVM-to-MMDVM, which is most
+traffic) pay a full teardown and rebuild in order to make the rarest
+path free. The reasoning is recorded in [D-02](docs/DECISIONS.md).
 
 **Timeslot is not a routing concept.** If you have fought TS1/TS2
 mapping across c-Bridge conduits or HBP bridges, this is the part to
@@ -52,7 +58,7 @@ notice: inside OmniLink, a stream is identified by talkgroup alone.
 Timeslot is just a per-member delivery parameter — "on this IPSC
 system, this bridge appears on TS2" — configured where it belongs and
 invisible everywhere else. Slot contention is handled at the edge it
-belongs to; trunked transports (OpenBridge, PORT) carry unlimited
+belongs to; trunked transports (OpenBridge) carry unlimited
 concurrent talkgroups with no slot mapping at all.
 
 **Bridges work the way you expect.** A bridge is a named conference —
@@ -116,7 +122,7 @@ is called done.
 For implementers and the deeply curious, in reading order:
 
 1. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — scope, single-thread model, memory discipline
-2. [`docs/FRAME.md`](docs/FRAME.md) — the byte-exact canonical frame (64 bytes)
+2. [`docs/FRAME.md`](docs/FRAME.md) — the byte-exact frame (64 bytes)
 3. [`docs/ROUTING.md`](docs/ROUTING.md) — bridges, stream arbitration, hang time, loops, slots
 4. [`docs/ADAPTERS.md`](docs/ADAPTERS.md) — per-protocol adapter specifications
 5. [`docs/DASHBOARD.md`](docs/DASHBOARD.md) — unified event bus, logging, dashboard

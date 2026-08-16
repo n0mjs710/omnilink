@@ -1,11 +1,16 @@
 # PLAN.md — Phased Build Plan
 
-Ordering principle: get real RF audio flowing through the canonical core as
-early as possible (phase 2), because the canonical-frame reduction is the
-one genuinely novel risk; everything after that is porting things we've
-already built once. Each phase has an **acceptance gate**; a phase isn't
-done until its gate passes, and production migration only follows gates
-(D-13).
+Ordering principle: get real RF audio flowing through the core as early as
+possible (phase 2), because the routing core is the one genuinely novel
+part; everything after that is porting things we've already built once.
+Each phase has an **acceptance gate**; a phase isn't done until its gate
+passes, and production migration only follows gates (D-13).
+
+The D-02 revision strengthened this ordering. With the burst as the frame
+payload, the first two adapters are near-passthrough rather than
+translators, so phase 2 is smaller and first audio comes sooner — which
+means IPSC and CC land against a core that has already been on the air
+instead of against a design.
 
 Implementer notes: docs are normative; deviations use the flag-then-fix
 pattern (STYLE.md). Design questions that the docs don't answer go to
@@ -53,17 +58,25 @@ arbitration, hang time, and a correct event trail on the socket.
 **Gate:** clean audio, correct metadata (src/dst/peer on the far
 dashboard), correct hang-time behavior, in **both directions** on both
 pairs — the live-verified standard used for the hblink4 openbridge work.
-This gate proves the entire thesis (burst → 49-bit AMBE → burst).
 
-## Phase 3 — PORT adapter + replay harness + dashboard v1
+Since the D-02 revision these two adapters are near-passthrough, so this
+phase is markedly smaller than originally planned and first audio arrives
+correspondingly earlier. The gate proves the routing core, arbitration,
+hang, and retarget LC splicing — not a representation round trip, which
+no longer exists on this path.
 
-- PORT adapter (ADAPTERS.md §6) + Python nx_frame codec in `tests/replay/`
-  → capture/inject canonical calls without radios; retro-fit phase-2
-  vectors into automated replay tests.
+## Phase 3 — Replay harness + dashboard v1
+
+*(PORT removed per D-07; federation is OBP, already built in phase 2.)*
+
+- Replay harness in `tests/replay/`: feed captured wire packets directly
+  into an adapter's ingress and capture its egress, no radios and no
+  second adapter in the path. Retro-fit phase-2 vectors into automated
+  replay tests.
 - Dashboard v1 (DASHBOARD.md): backend model + WebSocket, front-end ported
   from hblink4 dashboard, bridge-matrix view, last-heard, peer tables.
 
-**Gate:** two OmniLink instances bridged over PORT pass replayed and live
+**Gate:** two OmniLink instances bridged over OBP pass replayed and live
 audio; dashboard tracks a live call end-to-end (call_start latency < 1 s,
 survives daemon restart).
 
@@ -125,7 +138,8 @@ talkgroup, sourced from the playback ID, with correct timing.
 
 | Risk | Carried where |
 |------|---------------|
-| 49-bit reduction breaks some receiver's expectations (EMB/LC nuance) | Phase 2 gate is early *because* of this; `dmr/` is the proven reference |
+| Burst reconstruction for IPSC/CC breaks a receiver's expectations (EMB/LC nuance) | Narrowed by D-02: HBP/OBP no longer reconstruct at all, so this risk is now confined to the two legacy adapters, which ship last against a core already proven on air; `dmr/` is the reference |
+| Header/LC disagreement in a constructed burst (FRAME.md §4.1 rule 1) | The cost of a burst-native core; invisible to any test that does not decode audio, so it is a conformance-vector requirement, not a review item |
 | CC's exotic AMBE representation regresses in the port | D-11 solved it in cc2obp; vectors lock it in; CC ships last anyway |
 | A stalled adapter freezes the whole (single-threaded) daemon | Accepted at D-22 scope: systemd watchdog restart + instance federation bound the blast radius (D-04) |
 | Slot-arbitration edge cases at busy sites | slot logic confined to adapters; `slot_busy` events make it observable |

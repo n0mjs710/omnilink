@@ -48,9 +48,12 @@ Universal duties:
 
 **Ingress (wire → core):**
 - All protocol machinery: auth, registration, keepalives, peer state.
-- Reduce voice to canonical frames (FRAME.md): strip FEC/interleave to
-  49-bit AMBE (`dmr/` module), extract/decode LC, assign `stream_tag`,
-  stamp `origin_system/peer/slot`.
+- Present voice as the 33-byte DMR burst (FRAME.md §4.1), extract/decode
+  LC, assign `stream_tag`, stamp `origin_system/peer/slot`. For
+  burst-native protocols (HBP, OBP, IPSC's burst-carrying paths) this is
+  a copy; for bare-AMBE protocols (CC, IPSC voice) the adapter builds the
+  burst with `dmr/`, with the LC agreeing with the frame header and
+  synthesized fields taken from configured values.
 - Preserve call structure (D-16): real headers/terminators
   cross as real CALL_START/CALL_END; nothing is ever synthesized — a
   headerless (late-entry) stream begins with VOICE and stays headerless
@@ -68,9 +71,11 @@ Universal duties:
   out of the core.
 
 **Egress (core → wire):**
-- Reconstruct full protocol framing: FEC encode (AMBE 49→72, BPTC LC
-  header/terminator, EMB + embedded LC fragments, sync patterns — all in
-  `dmr/`), protocol packet wrap, protocol stream IDs.
+- Emit the payload burst in the protocol's framing. Burst-native
+  adapters write it out and re-touch it only where routing requires
+  (retarget LC splice, FRAME.md §4.1.1). Bare-AMBE adapters reduce it
+  (`dmr_ambe_72_to_49` ×3) and wrap in their own framing. Protocol packet
+  wrap and protocol stream IDs in both cases.
 - Slotted protocols: per-(system, slot) arbitration (ROUTING.md §5),
   with local-repeat traffic in the same arbitration state; follow the
   frame's `vseq` faithfully, local A–F counter only on `vseq = 7`
@@ -101,18 +106,21 @@ sockets non-blocking via `ev_loop`.
   peer-mode engine from `ipsc2hbpc/src/hbp.c`. Honor `PRESERVE_SOURCE_PEER`
   semantics learned in the OBP work: `origin_peer` = RptrId from DMRD on
   ingress; on egress DMRD RptrId = the local system's id (standard) —
-  preservation across the network happens via the canonical frame, which is
+  preservation across the core happens in the frame header, which is
   cleaner than the hblink3 flag hack.
-- **Ingress:** DMRD → 33-byte burst; voice sync/EMB classification; VHEAD
-  LC (BPTC decode) → CALL_START; embedded-LC accumulation for late entry;
-  `dmr_ambe_72_to_49` ×3 → VOICE; VTERM → CALL_END. HBP stream_id →
-  stream_tag map (pool, per repeater+slot).
-- **Egress:** burst encoding from what the frames carry (VHEAD only for a
-  real CALL_START, voice bursts at their `vseq` positions with
-  EMB/embedded LC from the 9-byte LC, VTERM), new HBP stream_id per
-  stream, slot from member config, arbitration per (system, slot). No
-  pacing (D-17): forward on arrival, as hblink3/4 always have — MMDVM
-  endpoints own their jitter buffers.
+- **Ingress (near-passthrough since D-02):** DMRD → frame with the
+  33-byte burst copied verbatim into the payload. Classify voice
+  sync/EMB to set `vseq`; BPTC-decode the VHEAD LC → CALL_START; VTERM →
+  CALL_END. **No AMBE conversion** — the burst is already the core's
+  representation. HBP stream_id → stream_tag map (pool, per
+  repeater+slot).
+- **Egress (near-passthrough):** write the payload burst back out as
+  DMRD. The burst is re-touched only where routing requires it: if the
+  member's TGID differs from the frame's, splice per-stream precomputed
+  LCs per FRAME.md §4.1.1. New HBP stream_id per stream, slot from
+  member config, arbitration per (system, slot). No pacing (D-17):
+  forward on arrival, as hblink3/4 always have — MMDVM endpoints own
+  their jitter buffers.
 - **Local repeat — the client/server obligation (D-18):** a master must
   repeat traffic among its own connected repeaters; that is what being
   the server means, and it happens *inside the adapter*, without
@@ -188,8 +196,8 @@ sockets non-blocking via `ev_loop`.
   membership here: an OBP system's allowed TGIDs are exactly the TGIDs it
   has bridge memberships for — no separate table needed, one config
   concept instead of two.
-- **Ingress:** HMAC verify, DMRD parse, burst → canonical (OBP carries HBP-
-  style bursts; same 72→49 path as HBP), wire slot ignored
+- **Ingress:** HMAC verify, DMRD parse, burst copied verbatim (OBP carries
+  HBP-style bursts, so like HBP this is a copy, not a conversion), wire slot ignored
   (`origin_slot = 0`, unslotted), many concurrent streams (stream pool per peer),
   per-stream dedupe of the retransmit/reflection cases hblink3 handles.
 - **Egress:** slot field fixed to 1 per OBP convention, no arbitration
@@ -203,44 +211,74 @@ sockets non-blocking via `ev_loop`.
 
 - **Reuse:** `cc2obp/cccc/cccc_link.c` (TCP 42421 control + UDP media,
   B-on/B-off call signaling) and `CC-CC_Link_Protocol_Specification.md`.
+- **A conduit is a discrete endpoint, not a trunk (D-27).** The protocol
+  spec is explicit: a conduit is identified by a Link ID and carries *one
+  talkgroup's* traffic, and "TGID is local — it is not carried
+  end-to-end; each end maps the conduit to its own configured TGID."
+  Structurally this is an XLX module, not an OpenBridge: the connection
+  *is* the bridge identity and nothing on the wire disambiguates. So a
+  conduit joins **exactly one bridge**, and config is flat:
+
+  ```
+  CC_BRIDGES = { 'CC-KSDMR': ('STATEWIDE', 3120) }   # conduit -> (bridge, local TGID)
+  ```
+
+  The declared TGID is the conduit's **core-side identity**, not a bridge
+  selector — it is precisely what the CC-CC protocol expects each end to
+  configure independently. Unlike the XLX TS2/TG9 case, a wrong value
+  here is benign and visible (traffic appears under a consistent but
+  unexpected talkgroup), which is why it is exposed rather than injected.
+
+  **No multiplexing.** cc2obp collapses N conduits onto one OBP trunk
+  because OBP is its only egress; that is an artifact of that tool's
+  purpose, not a property of CC-CC. Here each conduit is a first-class
+  system, so cc2obp's `(openbridge_system, tgid)` uniqueness machinery
+  has no analogue and is not ported.
+
+  **No unit calls.** The CC-CC spec puts private calls out of scope
+  entirely. A CC system in `UNIT` is a startup error, as for XLX-style
+  endpoints — different reason, same guard.
 - **Ingress:** B-on → CALL_START (a B-on is a *real* call-start signal;
   the 9-byte LC is constructed from its metadata — translation of a real
-  event, not synthesis), media → AMBE triplets (`vseq = 7`, FRAME.md
-  §1.1), B-off → CALL_END. One conduit = one TGID by construction, so a
-  CC system's bridge membership is a single member entry per conduit.
-- **Egress:** B-on/media/B-off synthesis, immediate forward (matches
-  cc2obp's no-jitter-buffer design).
+  event, not synthesis), media → AMBE triplets built up into bursts
+  (`vseq = 7`, FRAME.md §1.1), B-off → CALL_END. Burst construction
+  follows FRAME.md §4.1: LC agreeing with the frame header, colour code
+  and sync from configured values.
+- **Egress:** reduce the payload burst back to AMBE triplets, then
+  B-on/media/B-off synthesis, immediate forward (matches cc2obp's
+  no-jitter-buffer design).
 - **AMBE representation — solved, port carefully (D-11):** the c-Bridge
   represents AMBE internally in a form unlike anything else we have seen,
   including the representations in the ETSI documents; the working
   translation is already in `cc2obp/cccc/cccc_ambe.c` and CC audio is
   clean today. Port that code verbatim and lock it in with conformance
-  vectors (FRAME.md §7) — CC↔canonical vectors validated against
-  known-good HBP vectors of the same audio — so the hard-won fix can
-  never silently regress.
+  vectors (FRAME.md §7) — CC↔burst vectors validated against known-good
+  HBP vectors of the same audio — so the hard-won fix can never silently
+  regress. Note that `cc2obp/translate.c` already implements this exact
+  boundary (`extract_ambe()` → `cccc_ambe_pack21()` and its inverse)
+  against HBP burst form, so it ports as a lift rather than a rewrite.
 
-## 6. PORT — OmniLink native trunk (Trunk v2 successor)
+## 6. *(withdrawn)* PORT — OmniLink native trunk
 
-- **What:** `nx_frame` itself over UDP: tiny header (magic, LE u32 seq),
-  keepalive ping/pong (carrying frame version, FRAME.md §6 rule 4), dead-peer
-  detection. Peer identification is per-link config (D-19): `auth = "hmac"`
-  — HMAC-SHA1 with a shared secret, the exact routine and tag format OBP
-  already uses from `crypto.c`, so zero new crypto code; sender
-  authentication, **not** secrecy — or `auth = "none"` (source address is
-  the identity; right for VPNs and trusted paths). The direct
-  descendant of dmrlink3 `trunk.py`: unslotted, no contention, forward
-  everything the bridge table allows.
-- **Why:** core↔core interconnect with zero translation loss (no FEC
-  re-encode, no LC synthesis — the canonical frame goes through
-  untouched, `origin_peer`/`src` intact for loop observation, ROUTING.md §7);
-  and the external integration point: a recorder, an analytics feed, or one
-  day HBlink4-as-a-port speaks this instead of a DMR protocol. (An
-  out-of-process talkback could speak PORT too, but the built-in Playback
-  adapter (§7) is the first-class path.)
-- **Bridge membership:** like OBP, membership TGIDs are the allow list.
-- Simplest adapter (~400 LOC); built in phase 3 partly as the test harness
-  for everything else (a Python `port` speaker in `tests/` can inject and
-  capture canonical frames without any radio hardware).
+Removed with D-07. Federation between OmniLink instances is **OBP**: with
+the burst as the frame payload (D-02) an OBP hop is near-passthrough, so
+PORT's zero-translation-loss argument no longer distinguishes it. What
+OBP does not carry the far end re-derives — `origin_system` from the
+receiving peer, `vseq` from burst structure, flags from the LC.
+
+Two things PORT also provided, and where they went:
+
+- **External integration** (recorder, analytics feed) — the event bus
+  (D-09, DASHBOARD.md), which is where truth already lives. A consumer
+  needing traffic rather than events attaches as an OBP peer.
+- **No-radio test injection** — the replay harness feeds captures into
+  adapters directly, which is a better test anyway: it exercises the
+  adapter under test rather than a second adapter written to be easy.
+
+The frame layout remains trunk-capable (FRAME.md §6.1), so PORT can
+return without redesign if OBP ever limits federation. Both ends of an
+OmniLink↔OmniLink link are ours, so extending OBP is also available and
+has precedent (`PRESERVE_SOURCE_PEER`).
 
 ## 7. Playback — virtual talkback adapter (no transport) (D-26)
 
@@ -262,9 +300,9 @@ addressing-authority constraint, which binds those too.
   subscriber and nothing routes to it; one ID an operator already owns serves
   every Playback instance they run.
 - **Capture (`egress` = sink):** as a bridge member for its configured
-  TGID(s) the core hands it egress frames; it buffers one stream's canonical
+  TGID(s) the core hands it egress frames; it buffers one stream's
   frames (CALL_START…VOICE…CALL_END, `vseq` as received). No wire encode — it
-  keeps the canonical frames verbatim.
+  keeps the frames verbatim.
 - **Replay (`nx_core_ingress`):** after CALL_END (plus a configurable delay)
   it re-emits the buffered stream as a **new** stream — fresh `stream_tag`,
   `src` = its own radio ID, `dst` = the TGID it was captured from. The
@@ -286,8 +324,8 @@ The agreed hblink3⇄hblink4 doc already settled the shape: edge access
 server (auth, per-device options, user cache) peering over OBP with the
 core router. OmniLink replaces the *hblink3/dmrlink3 core-router role*;
 HBlink4 continues unchanged, now peering with OmniLink. If we later want
-HBlink4 tighter-coupled, the PORT protocol is the path (a Python nx_frame
-codec is trivial), and nothing designed here has to change.
+HBlink4 tighter-coupled, extending OBP between them is the path — both
+ends are ours (D-07) — and nothing designed here has to change.
 
 Note that D-03/D-18 deliberately narrow HBlink4's uniqueness:
 options-driven subscriptions (filtering local repeat *and* bridge

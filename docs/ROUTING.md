@@ -9,7 +9,7 @@ this file happens in the core module, on the daemon's single thread
 ## 1. Vocabulary
 
 - **System** — one configured protocol instance (an HBP master, an IPSC
-  network, an OBP peer, a CC conduit, a PORT link). Immutable table,
+  network, an OBP peer, a CC conduit). Immutable table,
   indexed by `origin_system` u16.
 - **Bridge** — a named conference. The unit of routing. Members are
   `(system, tgid, slot, enabled)` tuples. A bridge is the *only* way
@@ -113,7 +113,7 @@ map) and owns slot arbitration:
   the first and drops the second with a `slot_busy` event. This contention
   is invisible to the core *by design* — slot scarcity is an edge problem,
   and pushing it to the edge is what keeps the core protocol-agnostic.
-- Unslotted egress (OBP, PORT, CC-per-its-rules) has no such arbitration;
+- Unslotted egress (OBP, CC-per-its-rules) has no such arbitration;
   OBP carries many concurrent streams natively (wire slot field fixed per
   OBP convention, slot 1).
 - **Delivery truth (D-15).** The operator must always be
@@ -151,7 +151,7 @@ src_id → { system, peer, slot, last_tgid, last_heard }
 
 - Fed passively from **every** ingress traffic frame (CALL_START and
   VOICE alike — a long transmission keeps its talker routable), using
-  fields the canonical frame already carries: `origin_system`,
+  fields the frame already carries: `origin_system`,
   `origin_peer`, `origin_slot`. No adapter cooperation needed beyond
   honest metadata.
 - Entry timeout 600 s (hblink4's default), config `unit_cache_timeout`;
@@ -201,7 +201,8 @@ src_id → { system, peer, slot, last_tgid, last_heard }
    prominently. Loops are misconfigurations; the fix is operator
    action. (Phase 6 option, per D-23 policy: a configurable circuit
    breaker that temporarily disables the offending member.)
-6. PORT carries `origin_peer`/`src_id` intact, so the same observations
+6. OBP federation preserves `origin_peer`/`src_id` (D-07, PRESERVE_SOURCE_PEER
+   semantics), so the same observations
    hold across federated cores. TTL fields remain deliberately absent.
 
 ## 8. Config shape (TOML, parsed by lifted toml.c)

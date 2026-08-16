@@ -3,6 +3,15 @@
 One single-threaded C11 daemon (see README.md). The design is complete
 and frozen; you are implementing it, not designing it.
 
+**Revised 2026-08-16, before first code.** D-02 changed: the frame
+payload is the 33-byte DMR burst, not a canonical 49-bit AMBE triplet, so
+HBP and OBP are near-passthrough and IPSC/CC translate at the edge. D-07
+changed and D-19 was withdrawn: federation is OBP, PORT is not built.
+D-27 was added: endpoints whose bridge identity is the connection itself
+(XLX modules, CC conduits) join exactly one bridge. If you find a doc
+that still describes a canonical AMBE payload or a PORT adapter, it is a
+miss in that revision — DEVIATIONS entry, and tell the owner.
+
 ## Non-negotiable
 
 - **`docs/` are normative.** Code is written to them. Never edit a doc

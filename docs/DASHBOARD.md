@@ -15,7 +15,7 @@ knows — which is the D-23 policy/mechanism line made visible:
 direct descendants of today's hblink4/dmrlink3 dashboards: peer/repeater
 tables (with endpoint class — hotspot/repeater — per D-03), connection
 state, and live activity — TS pills for slotted systems, concurrent
-stream pills for OBP/PORT. This is most of the dashboard, because most
+stream pills for OBP. This is most of the dashboard, because most
 of what happens, happens in systems.
 
 **Bridge plane** (source: core — policy). The router's one table: each
@@ -73,7 +73,7 @@ One JSON object per event, single line:
 ```
 
 Envelope fields (always): `seq`, `ts` (wall, float s), `sub` (subsystem:
-`core`,`hbp`,`ipsc`,`obp`,`cc`,`port`), `sys` (system name or absent),
+`core`,`hbp`,`ipsc`,`obp`,`cc`), `sys` (system name or absent),
 `ev`, `lvl` (`debug|info|warn|error`).
 
 Vocabulary (phase-1 set; append-only; consumers must ignore unknown `ev`
