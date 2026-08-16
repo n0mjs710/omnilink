@@ -66,16 +66,25 @@ shift/mask accessor macros for the packed fields.
   7 = unknown. Assigned **exactly once, at ingress** — read from wire
   structure where the origin protocol has it (HBP, IPSC, OBP; ingress
   must classify position anyway to harvest embedded LC, so it is free),
-  7 where it does not (CC). Egress
-  adapters that emit burst structure follow it faithfully (sync at A,
-  EMB + embedded-LC fragment at B–F); on 7 they fall back to a local
-  per-stream A–F counter. Position is preserved, not re-counted,
-  because that is what RF does: losing bursts C,D shows a receiver
-  A,B,gap,E,F — relabeling would be editing the stream (D-16, D-21).
+  and 7 only where no position is knowable. Egress adapters follow it
+  faithfully (sync at A, EMB + embedded-LC fragment at B–F); on 7 they
+  fall back to a local per-stream A–F counter. Position is preserved, not
+  re-counted, because that is what RF does: losing bursts C,D shows a
+  receiver A,B,gap,E,F — relabeling would be editing the stream (D-16,
+  D-21).
+
+  **7 is now a narrow case, and emitting it wrongly is a defect.** Since
+  D-02 the payload is a burst, so an adapter that *constructs* one (CC,
+  IPSC) has already chosen sync-at-A versus EMB-fragment-at-B–F in order
+  to build it at all — the position is known and must be recorded. An
+  egress adapter told 7 falls back to its own counter and will splice
+  fragment *n* into a burst built as position *m*, which no test that
+  stops short of decoding audio will catch.
 - `origin_slot` (2 bits): 0 = unslotted/unknown origin, 1, 2.
-  **Metadata only** — the core never routes on it and never copies it
-  to egress; egress slot comes from bridge member config (ROUTING.md
-  §5). Its one functional consumer is the phase-5 target route cache.
+  **Metadata only** — the core never routes on it and never copies it to
+  egress; egress slot reaches the adapter in the `nx_egress_target`
+  (ADAPTERS.md §1), from bridge member config or the route cache. Its one
+  functional consumer is feeding the phase-5 target route cache.
 
 `src_id`/`dst_id`/`origin_peer` top octets: a DMR ID is 24 bits, period
 — no wider form ever appears over the air (the IPv4-like 4-byte ID form
@@ -92,9 +101,9 @@ time (D-17).
 
 | value     | name        | payload |
 |-----------|-------------|---------|
-| 0x01      | CALL_START  | 9-byte LC (§4.2) — only when a real header was received |
+| 0x01      | CALL_START  | header burst, or 9-byte LC (§4.2) per `pfmt` — only when a real header was received |
 | 0x02      | VOICE       | 33-byte DMR burst (§4.1) |
-| 0x03      | CALL_END    | 9-byte LC + LE u64 frame count (§4.3) — only on a real terminator |
+| 0x03      | CALL_END    | terminator burst or 9-byte LC, + LE u64 frame count (§4.3) — only on a real terminator |
 | 0x04      | DATA_BURST  | tag + opaque 33-byte burst (§4.4, phase 6) |
 | 0x05      | TALKER_META | reserved: talker alias / GPS (phase 6) |
 | 0x06–0x0F | reserved    | in-stream auxiliary traffic (§6 rule 2) |
@@ -107,8 +116,19 @@ events (DASHBOARD.md §4), never as frames.
 ### 2.1 Payload formats (`pfmt`)
 
 `pfmt` qualifies what is inside the payload, per type; `0x0` always
-means "this type's default format as specified in §4" and is the only
-defined value today. The field exists so payload kinds beyond voice —
+means "this type's default format as specified in §4".
+
+Defined today:
+
+| type | pfmt | payload |
+|---|---|---|
+| CALL_START | 0 | 33-byte voice LC header burst (§4.2) |
+| CALL_START | 1 | 9-byte decoded LC — for adapters with no burst (CC) |
+| VOICE | 0 | 33-byte burst (§4.1) |
+| CALL_END | 0 | 33-byte terminator burst + u64 count (§4.3) |
+| CALL_END | 1 | 9-byte decoded LC + u64 count |
+
+The field also exists so payload kinds beyond voice —
 the ETSI DMR data payload family (rate ½ / ¾ / rate 1 blocks, data
 headers, CSBK) — can later be promoted from the opaque DATA_BURST to
 typed payloads through an **unchanged core**: the core never interprets
@@ -163,6 +183,15 @@ Two rules for adapters that must *construct* a burst:
    synthesized. They come from the system's configured values. Never
    from a captured constant.
 
+   Note `dmr/` cannot do this as vendored: `DMR_SLOT_TYPE_VHEAD`/`VTERM`
+   in `dmr_const.c` are precomputed for **colour code 1**, and `golay.c`
+   carries `golay2312` (for AMBE) but no Golay(20,8) slot-type encoder.
+   Building a burst at a configured colour code needs one — about twenty
+   lines, and hblink3 had to add exactly this (`xlx_slot_type()`) for the
+   XLX link. Add it to `dmr/` deliberately and upstream before phase 2;
+   CLAUDE.md declares `dmr/` read-only vendored, so an implementer who
+   discovers the gap mid-adapter will stop rather than patch it.
+
 ### 4.1.1 Retargeting
 
 When a stream is delivered to a member whose TGID differs from the
@@ -172,11 +201,27 @@ target**, then splice per burst by position — do not rebuild per packet.
 `hblink3`'s `gen_lcs()` / `embed_lc()` pair is the reference
 implementation of exactly this and is known-correct in production.
 
-### 4.2 CALL_START — 9 bytes
+### 4.2 CALL_START — 33 bytes (`pfmt 0`) or 9 bytes (`pfmt 1`)
 
-The full 9-byte DMR Link Control (FLCO, FID, service options, dst24,
-src24) exactly as received in a real voice LC header. **Exists only when
-the origin actually delivered a header.** A stream that begins with
+**`pfmt 0` — the voice LC header burst, verbatim, 33 bytes.** Emitted by
+every adapter whose wire carries a burst (HBP, OBP, IPSC). This is the
+form that keeps D-02's promise: an HBP header crosses the core untouched
+like every other burst, with no BPTC decode on ingress and no re-encode
+on egress. It also preserves the origin's colour code and sync flavour,
+which a rebuilt header would silently replace with ours.
+
+**`pfmt 1` — the decoded 9-byte LC** (FLCO, FID, service options, dst24,
+src24). For adapters whose wire has no burst to carry: CC-CC, which
+signals call start with a B-on message, and any future protocol in the
+same position. An egress adapter that needs a burst builds one per §4.1;
+an egress adapter that needs fields reads them from the frame header,
+which carries src and dst regardless of `pfmt`.
+
+The core does not care which: it never parses payloads (§6 rule 1) and
+reads src/dst from the header. `pfmt` exists exactly so this distinction
+costs the core nothing.
+
+**Exists only when the origin actually delivered a header.** A stream that begins with
 voice (late entry — a normal, designed-for DMR condition) simply begins
 with VOICE frames: the core opens streams on any traffic frame, and a
 burst-emitting egress adapter builds its minimal LC from the frame's own
@@ -188,10 +233,11 @@ an egress member whose TGID differs patches dst24 to the frame's routed
 everywhere they appear; everything else in the LC (FLCO, FID, service
 options) is preserved (D-16).
 
-### 4.3 CALL_END — 17 bytes
+### 4.3 CALL_END — 41 bytes (`pfmt 0`) or 17 bytes (`pfmt 1`)
 
-Same 9-byte LC (the terminator's), then LE u64 count of VOICE frames the
-ingress adapter forwarded. **Exists only on a real protocol terminator.**
+The terminator in the same two forms as §4.2 — the 33-byte terminator
+burst verbatim, or the decoded 9-byte LC — then LE u64 count of VOICE
+frames the ingress adapter forwarded. **Exists only on a real protocol terminator.**
 When a stream just stops, the core's timeout frees state, releases the
 bridge into hang time, and emits the `call_end` event — nothing is
 synthesized downstream; every far edge (MMDVM, MOTOTRBO, HBP masters)
@@ -283,10 +329,11 @@ ships, before it is declared done:
 2. **Egress vectors:** `nx_frame` sequence → expected wire packets,
    byte-exact.
 3. **The loopback identity:** for burst-native protocols,
-   ingress(egress(f)) reproduces the burst bits exactly. For IPSC and
-   CC, whose native form is 3x49-bit AMBE, the identity is on the AMBE
-   bits: the synthesized burst fields are not round-tripped and must
-   not be asserted on.
+   ingress(egress(f)) reproduces the burst bits exactly — including
+   CALL_START and CALL_END, which is why those carry the burst (§4.2).
+   For IPSC and CC, whose native form is 3x49-bit AMBE, the identity is
+   on the AMBE bits: synthesized burst fields are not round-tripped and
+   must not be asserted on.
 
 Vector sources: paired live captures, cross-checks against dmr_utils3
 for HBP/IPSC framing, and `cccc_ambe.c`'s golden data for CC.

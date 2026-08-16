@@ -231,6 +231,17 @@ it natively. Nothing in the system synthesizes frames. Addressing vs
 structure: routing rewrites addresses everywhere they appear (TGID,
 slot, LC dst24); structure and timing pass through untouched.
 
+**One carved exception: the IPSC egress wire.** `ipsc2hbpc`, which is in
+production and which phase 4 lifts, ends a drained or vanished stream by
+emitting a terminator (`translate.c`, `on_stream_timeout` → `emit_term`).
+That is not a defect to be ported out. IPSC has no representation for
+"nothing," and a MOTOTRBO repeater left without a terminator stays keyed.
+The rule above governs **frames** — nothing fabricates an `nx_frame`, no
+CALL_END is invented into the routing path, and no other adapter emits a
+terminator it did not receive. What an IPSC *egress* puts on its own wire
+to close a transmission the far repeater is physically holding open is
+protocol machinery, and it stays.
+
 ## D-17 — No pacing, no loss concealment; IPSC egress clock is the sole
 exception
 
@@ -240,8 +251,18 @@ carry only a ~2-packet buffer: timing must arrive correct, and
 correcting timing requires a small buffer to correct it in. That buffer
 is *position-preserving* — playout scheduled by `seq` (stream-start +
 n×60 ms) so a missing burst leaves its gap at the right time.
-Per-system configurable. A correctly-placed gap is timing correction,
-not concealment.
+Per-system configurable.
+
+**And the gap is filled with silence, on the IPSC wire only.** The
+production code this lifts emits a comfort-silence AMBE burst when a
+playout slot comes up empty (`translate.c`, `tr->ambe_silence`), because
+IPSC's wire cannot express "nothing" at a scheduled instant — the choice
+is silence or a timing lie, and the position-preserving buffer exists
+precisely to make it silence *at the right moment*. Calling this
+"concealment" would be a stretch: nothing is reconstructed and no loss is
+hidden from the operator (the synth count is logged and evented). It is
+the honest encoding of a gap in a protocol with no null. It applies
+nowhere else in the system, and no other adapter may do it.
 
 ## D-18 — In-system local repeat lives in the adapter; IPSC has none
 

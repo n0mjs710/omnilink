@@ -66,8 +66,10 @@ concurrent talkgroups with no slot mapping at all.
 think c-Bridge bridge group, or an hblink3 conference bridge — whose
 members are (system, talkgroup, slot-where-applicable). Talkgroup
 numbers translate naturally across members. One talker holds a bridge at
-a time, with hang time so a conversation isn't trampled between
-transmissions. Rules are static and operator-owned; dynamic on/off
+a time. Hang time — holding a repeater's timeslot for a conversation so
+another talkgroup can't seize it between transmissions — belongs to the
+repeater's channel, not to the bridge, and is configured per system.
+Rules are static and operator-owned; dynamic on/off
 timers and triggers in the hblink3 style are on the roadmap on the same
 foundation.
 

@@ -17,11 +17,17 @@ OBP — not for performance, but for resilience (too many eggs in one
 basket is an operational failure mode regardless of CPU headroom).
 
 Sizing at the ceiling: 100 systems carrying a generous 200 concurrent
-streams is ~3,400 frames/s ≈ 220 KB/s of internal traffic, with
-microsecond-scale per-burst DSP (Golay/BPTC via `dmr/`). That is
-single-digit percent of one core. **No performance or scaling argument
-for concurrency exists at this scope** — which is why the process model
-below is the simplest one that works.
+streams is ~3,400 frames/s of *ingress*. The work is **egress fan-out**,
+and that is the number to size against: a 20-member bridge turns each
+ingress frame into 19 sends, and an HBP master locally repeating to 100
+connected repeaters turns each frame into up to 100. Realistic worst case
+is on the order of 10^5 `sendto` calls per second, not 10^3 — two orders
+above the ingress figure, and still comfortably inside one core with
+microsecond-scale per-burst DSP (Golay/BPTC via `dmr/`) and no per-frame
+allocation. **No performance or scaling argument for concurrency exists
+at this scope** — which is why the process model below is the simplest
+one that works. Quote the fan-out number, not the ingress number; the
+ingress number is not the one that matters.
 
 ## 2. Process model: one thread, one loop
 
@@ -46,7 +52,7 @@ below is the simplest one that works.
 - Modules interact by **direct function call**, with `const nx_frame *`
   as the only currency between adapters and core:
   - adapter ingress → `nx_core_ingress(const nx_frame *f)`
-  - core egress → `ops->egress(system, const nx_frame *f)`
+  - core egress → `ops->egress(inst, const nx_frame *f, const nx_egress_target *t)`
   - anyone → `nx_event_emit(...)`, adapters → `nx_core_system_state(...)`
 - The hot path is a single synchronous chain with **zero queues, zero
   copies, zero locks**: `recvfrom → parse/reduce → nx_core_ingress →
@@ -54,6 +60,24 @@ below is the simplest one that works.
   The sole internal buffer in the entire daemon is the IPSC playout
   clock's small jitter buffer (ADAPTERS.md §3), which exists for the
   listener, not for the architecture.
+
+### The real single-thread hazard is blocking name resolution
+
+Not a spinning protocol bug — the watchdog covers that. Both ancestors
+resolve hostnames *inside* the connect path (`cc2obp/net.c`,
+`ipsc2hbpc/src/net.c`), which is reached from reconnect timers. At one or
+two links that is invisible. At ~100 systems, many outbound by hostname
+(HBP peer, XLX, OBP), **one unresponsive resolver blocks the entire
+daemon** for the resolver timeout and drops every call on every system —
+and systemd's watchdog does not fire, because the process is alive, just
+deaf.
+
+Therefore: **resolve at startup only.** Config load turns every hostname
+into a `sockaddr` once and stores it; the datapath and reconnect timers
+use the stored address and never call `getaddrinfo`. An address that
+changes needs a restart, which is consistent with D-10 anyway. If
+re-resolution is ever wanted it belongs on a slow timer that tolerates
+failure, never in a connect path.
 
 ### Why not threads (D-04)
 
@@ -71,7 +95,8 @@ the calculus ever changes, but that is not a supported build target.
 ## 3. Module boundaries
 
 - **Core** (`core.c`, `route.c`): bridge table, stream table, talker
-  arbitration, hang time, loop observation (pattern alarm only, D-25),
+  arbitration (no hang — that is a channel property, ROUTING.md §4),
+  loop observation (pattern alarm only, D-25),
   unit route cache (phase 5),
   event sequencing. Policy lives here (D-23) — the core decides *whether
   and where* a stream goes.
@@ -96,10 +121,14 @@ The adapter contract in full is `ADAPTERS.md` §1.
   per-peer pools are sized from config and allocated once at startup;
   steady state runs `malloc`-free. (Config parse and event JSON
   formatting into a fixed 2 KiB buffer are the startup/edge exceptions.)
-- Frames move **by `const` pointer** through the synchronous chain —
-  nothing retains a frame past the call that delivered it, except the
-  IPSC playout buffer, which copies the frames it holds (64 B each,
-  FRAME.md).
+- Frames move **by `const` pointer** through the synchronous chain. Two
+  components retain a frame past the call that delivered it, and both
+  copy: the IPSC playout buffer, and the Playback adapter's capture
+  buffer (ADAPTERS.md §7). 64 B each, both bounded and sized at init.
+- The core does make **one stack copy per egress member**, since it
+  rewrites `dst_id` to the member's TGID from a single `const` source
+  frame. "Zero copies" below means no heap traffic and no queues, not
+  literally zero — one 64-byte copy per delivery is the cost of routing.
 - Fixed-capacity pools use freelists with plain indices; single thread
   means single owner for everything, no exceptions to reason about.
 - Config strings are interned at startup; systems are referred to by
@@ -112,8 +141,9 @@ The adapter contract in full is `ADAPTERS.md` §1.
 - **Startup:** parse TOML → build immutable system/bridge tables →
   adapters `init()` (open sockets, register fds/timers on the loop) →
   `ev_run`.
-- **Housekeeping:** core timer at 500 ms (stream timeouts → free + hang
-  release + `call_end` event; nothing synthesized downstream — D-16);
+- **Housekeeping:** core timer at 500 ms (stream timeouts → free stream +
+  release bridge holder + `call_end` event; nothing synthesized
+  downstream — D-16);
   adapters own their protocol timers (keepalives, peer expiry, playout
   ticks).
 - **Shutdown:** SIGINT/SIGTERM → adapters send protocol goodbyes →
@@ -146,9 +176,26 @@ omnilink/
 └── tests/                      # unit tests + golden vectors + replay
 ```
 
-Estimated new C (excluding lifted modules): core ≈ 2 kLOC, adapters ≈
-0.8–1.5 kLOC each — comfortably inside the complexity class of
-ipsc2hbpc + cc2obp combined, now without any concurrency machinery.
+Estimated new C, excluding lifted modules and measured against the
+ancestors rather than guessed:
+
+| | evidence | estimate |
+|---|---|---|
+| core (`core`,`route`,`event`,`config`,`frame`,`main`,`subscriber`) | `bridge.py` is 1,205 dense lines; `cc2obp/config.c` is 360 for a far smaller validation surface; the plane-complete snapshot serializer (DASHBOARD.md §6) has no ancestor | **3.0–3.8 k** |
+| HBP | `ipsc2hbpc/src/hbp.c` is 312 and is **peer mode only**; the master side has no C ancestor | **1.1–1.5 k** |
+| IPSC | `ipsc.c` 683 (peer only) + the clocked egress now in `translate.c` | **1.3–1.7 k** |
+| CC | `cccc_link.c` 759 + `cccc_ambe.c` 48 | **0.9–1.1 k** |
+| OBP | `obp_link.c` 178 | **0.3–0.45 k** |
+| XLX | HBP peer + link + validation | **0.15–0.25 k** |
+| tests | `ipsc2hbpc` ships 298 lines, `cc2obp` 930; D-11 mandates three vector classes × six adapters | **1.5–2.5 k** |
+
+**≈7–9 kLOC plus ≈2 kLOC of tests.** That is larger than a first pass
+suggests, and still inside the complexity class of ipsc2hbpc + cc2obp
+combined, which is the claim that matters. Two line items are easy to
+miss: `config.c` for six protocols with named validations and remedy text
+is 700–900 lines by itself, and the snapshot serializer is a real 300–500
+line module. Phase 1 is correspondingly the biggest phase, as PLAN.md
+already says.
 
 ## 7. What is deliberately NOT here
 

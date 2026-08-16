@@ -11,11 +11,21 @@ Each adapter type exports an ops table; each configured system gets one
 instance:
 
 ```c
+/* Where this frame is going on this system. The core fills it: from the
+   bridge member for group calls, from the unit route cache for unit calls
+   (ROUTING.md §6). It is the only channel by which delivery parameters
+   reach an adapter. */
+typedef struct {
+    uint32_t tgid;   /* destination TGID; equals frame dst_id for unit calls */
+    uint8_t  slot;   /* 1 | 2; 0 = unslotted (OBP, CC) */
+    uint32_t peer;   /* specific endpoint to deliver to, 0 = adapter's choice */
+} nx_egress_target;
+
 typedef struct {
     /* Open sockets, register fds/timers on the shared loop. */
     void *(*init)(const nx_system_cfg *cfg, ev_loop *loop, uint16_t sys_idx);
     /* Core hands an egress frame for this system. Synchronous. */
-    void  (*egress)(void *inst, const nx_frame *f);
+    void  (*egress)(void *inst, const nx_frame *f, const nx_egress_target *t);
     /* Protocol goodbyes on daemon shutdown. */
     void  (*shutdown)(void *inst);
 } nx_adapter_ops;
@@ -25,6 +35,15 @@ void nx_core_ingress(const nx_frame *f);
 void nx_core_system_state(uint16_t sys, uint32_t peer, bool up);
 void nx_event_emit(/* subsys, sys, ev, lvl, fields... */);
 ```
+
+**Why the target is a parameter and not config an adapter holds.** An
+adapter must not carry a private replica of bridge membership: rule
+distribution to the edge is policy at the edge, which D-23 forbids. It
+also would not work — unit calls are routed from the core's route cache,
+which no adapter can see, and `origin_slot` is deliberately never copied
+to egress (FRAME.md §1.1), so without this parameter there is no channel
+at all by which the core could name a peer or a slot. One struct closes
+both holes and keeps every routing decision in the core.
 
 Everything is a direct synchronous call on one thread — no queues, no
 rings, no handoffs (ARCHITECTURE.md §2).
@@ -57,9 +76,13 @@ Universal duties:
 - Preserve call structure (D-16): real headers/terminators
   cross as real CALL_START/CALL_END; nothing is ever synthesized — a
   headerless (late-entry) stream begins with VOICE and stays headerless
-  end-to-end. **No timeout terminators anywhere** — when a stream just
-  stops, the core emits the event and everyone's state expires on its
-  own timers (ROUTING.md §3). Assign `vseq` once here: read from wire
+  end-to-end. **No timeout terminators into the core** — when a stream
+  just stops, the core emits the event and everyone's state expires on
+  its own timers (ROUTING.md §3). The one carved exception is what an
+  IPSC *egress* writes to its own wire (§3, D-16, D-17): IPSC cannot
+  express absence, so its playout closes a drained stream with a
+  terminator and fills scheduled gaps with silence. That never becomes a
+  frame and never re-enters the core. Assign `vseq` once here: read from wire
   superframe position (free — position is classified anyway to harvest
   embedded LC), or 7 = unknown for structureless origins (FRAME.md
   §1.1).
@@ -76,8 +99,9 @@ Universal duties:
   (retarget LC splice, FRAME.md §4.1.1). Bare-AMBE adapters reduce it
   (`dmr_ambe_72_to_49` ×3) and wrap in their own framing. Protocol packet
   wrap and protocol stream IDs in both cases.
-- Slotted protocols: per-(system, slot) arbitration (ROUTING.md §5),
-  with local-repeat traffic in the same arbitration state; follow the
+- Slotted protocols: per-(system, slot) arbitration *and hang time*
+  (ROUTING.md §5 — hang is a channel property and lives only here), with
+  local-repeat traffic in the same arbitration state; follow the
   frame's `vseq` faithfully, local A–F counter only on `vseq = 7`
   (FRAME.md §1.1). For a headerless stream, build minimal LC from the
   frame's src/dst and emit no wire header (FRAME.md §4.2).

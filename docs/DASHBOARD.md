@@ -21,7 +21,9 @@ of what happens, happens in systems.
 **Bridge plane** (source: core — policy). The router's one table: each
 bridge, its members, and per member the (system, TGID, slot) rewrite
 parameters — this *is* the rewrite made visible — plus enabled/active
-status, hang time, and the current talker/holder. Phase 6 adds the
+status and the current talker/holder (hang time is a per-(system,slot)
+property and belongs to the systems plane, not here — ROUTING.md §4).
+Phase 6 adds the
 dynamic-rule columns (timeout, timeout type, trigger, reset) on the same
 rows. The bridge matrix view (bridges × members, live talker highlighted)
 renders this plane — the one visualization no per-protocol dashboard
@@ -34,7 +36,10 @@ events from every system) and the unified event/log window.
 
 Adapters and core emit **what happened** (calls, peers, drops, state);
 the dashboard backend **derives** every visual from those plus the
-snapshot's static config. A TS pill lights because a call event's
+snapshot's static config. Events are keyed by
+`(origin_system, stream_tag)`; a stream that is both locally repeated and
+bridged legitimately produces a `local:true` event from its adapter *and*
+one from the core, and the backend must fold them (ROUTING.md §5). A TS pill lights because a call event's
 system+slot says so (origin side) or because the core's `call_start`
 listed that member and config gives the member's slot (egress side); OBP
 stream pills are the set of active streams touching that system;
@@ -55,7 +60,11 @@ core     ──nx_event_emit()──▶ (in core)      └─▶ Unix event sock
 ```
 
 - Adapters and core call `nx_event_emit()` directly — a synchronous
-  format-and-fan-out into a fixed 2 KiB buffer. Nobody but the event
+  format-and-fan-out into a fixed 2 KiB buffer. **The snapshot (§6) does
+  not use this buffer**: a plane-complete snapshot of 100 systems and
+  their peers is far larger than 2 KiB, so it is serialized incrementally
+  straight to the socket from its own writer, never formatted whole in
+  memory. Nobody but the event
   module touches the log file or socket.
 - The event module assigns each event a global **monotonic sequence
   number** and wall-clock time. On a single thread, emission order *is*
@@ -119,9 +128,11 @@ On connect, the daemon sends one `snapshot` event before the live
 stream. The snapshot must be **plane-complete**, so a consumer can render
 everything without history:
 
-- **Bridge plane:** the full bridge table — every bridge, hang time, and
-  per member: system, TGID, slot, enabled (and, phase 6, the dynamic-rule
-  parameters); current holders/hang state.
+- **Bridge plane:** the full bridge table — every bridge and per member:
+  system, TGID, slot, enabled (and, phase 6, the dynamic-rule
+  parameters); current holders.
+- **Systems plane** additionally carries per-(system,slot) hang state,
+  which is where hang lives (ROUTING.md §4-§5).
 - **Systems plane:** system inventory (name, protocol, mode, up/down),
   connected peers with endpoint class, active streams per system.
 - **Global plane:** the last-heard cache and the latest cached `stats`
