@@ -64,7 +64,7 @@ t_start, t_last_frame, frames_forwarded, frames_dropped, state
   CONTENDED stream are silently dropped (one log line per lost call,
   not 50).
 - **Traffic on an ACTIVE stream** (VOICE, and unknown in-stream types per
-  FRAME.md §6.2): update `t_last_frame`, forward.
+  FRAME.md §6 rule 2): update `t_last_frame`, forward.
 - **CALL_END** (real terminator only) for an ACTIVE stream: forward,
   release the talker lock into hang time, emit `call_end` event
   (duration, frames, reason), free the stream slot.
@@ -238,8 +238,10 @@ member    = [
 ```
 
 Config load validates: unique system names, unique `(system, tgid)` across
-all bridges, slot present iff the member's protocol is slotted, and builds
-the immutable tables of ARCHITECTURE.md §5. Validation errors must name
+all bridges, slot present iff the member's protocol is slotted,
+**single-talkgroup systems (CC conduits) appearing in at most one bridge
+and never as a unit-call target (D-27)**, and builds the immutable tables
+of ARCHITECTURE.md §5. Validation errors must name
 the offending line *and the remedy* — in particular, the duplicate
 `(system, tgid)` rejection (D-05) must say plainly that one TGID on one
 system belongs to exactly one bridge, and that a per-slot split (an

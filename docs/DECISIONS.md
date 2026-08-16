@@ -400,7 +400,7 @@ implementation (github.com/n0mjs710/dmr-talkback) reached the same
 conclusion during its build and is group-only for the same reason.*
 
 ## D-27 — Multi-bridge membership requires a wire discriminator;
-## endpoints join exactly one bridge
+## single-talkgroup endpoints join exactly one bridge
 
 *(Added 2026-08-16.)*
 
@@ -408,40 +408,53 @@ A system may be a member of **more than one bridge only if its wire
 format carries a discriminator that identifies which bridge a given
 stream belongs to.** In practice that discriminator is the TGID.
 
-- **OBP** carries a TGID per stream, so one peer on many bridges is
-  unambiguous in both directions. Config is nested:
-  `{system: {bridge: tgid}}`.
-- **XLX modules and CC-CC conduits *are* their bridge identity.** One
-  connection carries one room or one talkgroup, and nothing on the wire
-  distinguishes it — XLX presents every module as TS2/TG9 with no module
-  identifier in any frame, and the CC-CC specification states plainly
-  that TGID "is not carried end-to-end; each end maps the conduit to its
-  own configured TGID." These join **exactly one bridge**. Config is
-  flat: `{system: bridge}` for XLX, `{conduit: (bridge, tgid)}` for CC.
+- **HBP, IPSC, OBP** carry a per-stream TGID, so one system on many
+  bridges is unambiguous in both directions. This is the ordinary case
+  and what ROUTING.md §2's `(system, tgid) → member` lookup assumes.
+- **A CC-CC conduit is not that.** The protocol specification is explicit:
+  a conduit is identified by a Link ID, carries *one talkgroup's* traffic,
+  and "TGID is local — it is not carried end-to-end; each end maps the
+  conduit to its own configured TGID." The connection *is* the bridge
+  identity; nothing on the wire distinguishes one bridge from another.
+
+Config expression: no new table and no new syntax. A CC system appears as
+an ordinary `[[bridge]]` member (`{ system = "CC-KSDMR", tgid = 3120 }`,
+no slot); the rule is a **validation** rule — config load rejects a
+single-talkgroup system appearing as a member of more than one bridge.
+The declared `tgid` is the conduit's core-side identity, which is exactly
+what the CC-CC protocol expects each end to configure independently.
 
 Two independent failures follow from allowing otherwise, and the second
 is the load-bearing one:
 
-1. **Ingress is ambiguous.** A stream arrives on the connection with
-   nothing to say which bridge it belongs to, so the core would have to
-   fan it to both — one stream becomes two. This is the same ingress
-   fork already prohibited for OBP when one TGID maps to two bridges.
-2. **Coherent egress would require U-turn replication.** Traffic
-   arriving at the endpoint *from* bridge A belongs, if the endpoint is
-   also on bridge B, on B as well. Delivering it would mean replicating
-   and reversing direction inside the core. Decline that and the
-   topology is incoherent in a way no operator would predict: A and B
-   both reach the far system but never each other. Accept it and the
-   endpoint has become a bridge-joiner — which is what a bridge already
-   is. Out of scope, permanently.
+1. **Ingress is ambiguous.** A stream arrives on the conduit with nothing
+   to say which bridge it belongs to, so the core would have to fan it to
+   both — one stream becomes two. This is the same ingress fork that
+   ROUTING.md §2's unique-`(system, tgid)` rule already prohibits.
+2. **Coherent egress would require U-turn replication.** Traffic arriving
+   at the conduit *from* bridge A belongs, if the conduit is also on
+   bridge B, on B as well. Delivering it would mean replicating and
+   reversing direction inside the core. Decline that and the topology is
+   incoherent in a way no operator would predict: A and B both reach the
+   far c-Bridge but never each other. Accept it and the endpoint has
+   become a bridge-joiner — which is what a bridge already is. Out of
+   scope, permanently.
 
 Operators wanting two bridges joined join them. They do not do it
 implicitly through a shared single-talkgroup endpoint.
 
-Note the CC conduit still declares a local TGID. That value is the
-conduit's **core-side identity**, not a bridge selector — it is what the
-CC-CC protocol expects each end to configure independently. Unlike the
-XLX case, a wrong value here is benign and visible: traffic appears
-under a consistent but unexpected talkgroup rather than vanishing. That
-is why CC exposes it and XLX does not (TS2/TG9 is a protocol constant
-and a wrong value there is silently fatal).
+**Precedent, and a note on scope.** The same structure appears in XLX
+reflectors, where one connection is one module, every module presents as
+TS2/TG9, and no module identifier exists in any frame — hblink3 gained
+XLX support on exactly this model (one system, one bridge, no TGID
+column, and a hard error if the system appears in `UNIT`). OmniLink has
+no XLX adapter specified; if one is ever added it inherits this decision
+unchanged. One difference worth carrying over: XLX's TS2/TG9 is a
+protocol constant where a wrong value is *silently fatal*, so hblink3
+makes it inexpressible rather than configurable. CC's local TGID is
+different — a wrong value there is visible (traffic under a consistent
+but unexpected talkgroup), so it is exposed.
+
+Unit calls: the CC-CC specification puts private calls out of scope
+entirely, so a CC system must never receive one. Config validation
+rejects it, for the same reason hblink3 rejects an XLX system in `UNIT`.

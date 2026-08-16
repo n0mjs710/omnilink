@@ -154,9 +154,13 @@ sockets non-blocking via `ev_loop`.
 - **Modes:** `peer` (join an existing IPSC network — primary) and `master`
   (bootstrap master, as dmrlink does).
 - **Ingress:** IPSC group/private voice → burst type classification, AMBE
-  extraction to 49-bit, call boundaries from IPSC burst types (call start /
-  terminator), `origin_peer` from IPSC RptrId field, per-network keepalive
-  state → `nx_core_system_state` + events.
+  extracted as 49-bit and then **built into a 33-byte burst** (`dmr/`:
+  49→72, BPTC LC, slot type, sync) per FRAME.md §4.1 — IPSC is one of the
+  two adapters that constructs rather than copies, so the LC must agree
+  with the frame header and colour code comes from config. Call boundaries
+  from IPSC burst types (call start / terminator), `origin_peer` from IPSC
+  RptrId field, per-network keepalive state → `nx_core_system_state` +
+  events.
 - **Egress:** IPSC voice packet synthesis (the ipsc2hbpc HBP→IPSC path,
   already solved), slot from member config, IPSC sequence/rtp fields owned
   here. The ipsc2hbpc jitter-buffer egress clock is retained as the
@@ -215,19 +219,23 @@ sockets non-blocking via `ev_loop`.
   spec is explicit: a conduit is identified by a Link ID and carries *one
   talkgroup's* traffic, and "TGID is local — it is not carried
   end-to-end; each end maps the conduit to its own configured TGID."
-  Structurally this is an XLX module, not an OpenBridge: the connection
-  *is* the bridge identity and nothing on the wire disambiguates. So a
-  conduit joins **exactly one bridge**, and config is flat:
+  The connection *is* the bridge identity and nothing on the wire
+  disambiguates, so a conduit joins **exactly one bridge**. No new config
+  syntax: it is an ordinary bridge member, with a validation rule.
 
-  ```
-  CC_BRIDGES = { 'CC-KSDMR': ('STATEWIDE', 3120) }   # conduit -> (bridge, local TGID)
+  ```toml
+  [[bridge]]
+  name   = "STATEWIDE"
+  member = [
+    { system = "CC-KSDMR", tgid = 3120 },   # conduit: no slot, at most one bridge
+  ]
   ```
 
   The declared TGID is the conduit's **core-side identity**, not a bridge
   selector — it is precisely what the CC-CC protocol expects each end to
-  configure independently. Unlike the XLX TS2/TG9 case, a wrong value
-  here is benign and visible (traffic appears under a consistent but
-  unexpected talkgroup), which is why it is exposed rather than injected.
+  configure independently, and a wrong value is visible rather than
+  silently fatal (traffic appears under a consistent but unexpected
+  talkgroup), which is why it is exposed rather than injected.
 
   **No multiplexing.** cc2obp collapses N conduits onto one OBP trunk
   because OBP is its only egress; that is an artifact of that tool's
@@ -236,8 +244,8 @@ sockets non-blocking via `ev_loop`.
   has no analogue and is not ported.
 
   **No unit calls.** The CC-CC spec puts private calls out of scope
-  entirely. A CC system in `UNIT` is a startup error, as for XLX-style
-  endpoints — different reason, same guard.
+  entirely, so config load rejects a CC system as a unit-call target and
+  the core never routes `NXF_UNIT` to one (ROUTING.md §6, §8).
 - **Ingress:** B-on → CALL_START (a B-on is a *real* call-start signal;
   the 9-byte LC is constructed from its metadata — translation of a real
   event, not synthesis), media → AMBE triplets built up into bursts

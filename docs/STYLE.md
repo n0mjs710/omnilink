@@ -76,8 +76,8 @@ obvious, no changelog comments.
 - Adapter level: golden conformance vectors per FRAME.md §7 — an adapter
   PR without vectors is incomplete by definition.
 - System level: `tests/replay/` Python harness feeding captured wire
-  packets straight into an adapter to inject
-  captured calls and assert what comes out of another adapter's socket.
+  packets straight into one adapter's ingress and asserting what comes out
+  of another adapter's socket.
 
 ## Process
 
@@ -85,6 +85,9 @@ obvious, no changelog comments.
   immediately after committing once a remote exists.
 - The docs in `docs/` are normative. Implementation discoveries that
   contradict a doc: **flag it in the commit message and a `docs/DEVIATIONS.md`
-  entry, adjust the doc, and keep going** (the flag-then-fix pattern proven
-  on cc2obp) — do not silently diverge and do not silently halt.
+  entry, implement the smallest reasonable interpretation, and keep going**
+  (the flag-then-fix pattern proven on cc2obp) — do not silently diverge and
+  do not silently halt. **Do not edit the doc yourself**: normative doc
+  changes are made only by the project owner (CLAUDE.md). The DEVIATIONS
+  entry is how the change gets proposed.
 - GPLv3 headers on new files, N0MJS copyright, matching the house form.

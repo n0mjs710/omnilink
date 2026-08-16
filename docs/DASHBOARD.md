@@ -1,6 +1,6 @@
 # DASHBOARD.md — Unified Event Bus, Logging, Dashboard
 
-The requirement: five protocol modules plus a core, logging **in unison**,
+The requirement: every protocol module plus the core, logging **in unison**,
 feeding **one** dashboard. The mechanism: every component emits semantic
 events; the event module is the single serialization point; everything
 human-facing (text log, dashboard, future alerting) is a *rendering* of

@@ -91,7 +91,7 @@ mappings, and who is talking, all in one place.
 - **Not a worldwide-network platform.** OmniLink is built for the
   state / regional / national-group level — roughly up to a hundred
   connected systems per instance. Bigger footprints federate multiple
-  OmniLink instances over the native trunk, which also keeps failure
+  OmniLink instances over OpenBridge, which also keeps failure
   domains small. It is a tool for building *your* network, not another
   Brandmeister.
 - **Not a multi-mode gateway.** OmniLink is DMR, end to end. No

@@ -71,7 +71,8 @@ the calculus ever changes, but that is not a supported build target.
 ## 3. Module boundaries
 
 - **Core** (`core.c`, `route.c`): bridge table, stream table, talker
-  arbitration, hang time, loop suppression, unit route cache (phase 5),
+  arbitration, hang time, loop observation (pattern alarm only, D-25),
+  unit route cache (phase 5),
   event sequencing. Policy lives here (D-23) — the core decides *whether
   and where* a stream goes.
 - **Adapters** (`adapters/*.c`): all protocol machinery — auth,
@@ -139,7 +140,7 @@ omnilink/
 │   ├── dmr/                    # libdmrdsp, lifted from ipsc2hbpc unchanged
 │   └── adapters/
 │       ├── adapter.h           # the adapter contract (ADAPTERS.md §1)
-│       ├── hbp.c  ipsc.c  obp.c  cc.c
+│       ├── hbp.c  ipsc.c  obp.c  cc.c  playback.c
 ├── dashboard/                  # Python (DASHBOARD.md)
 ├── docs/
 └── tests/                      # unit tests + golden vectors + replay
