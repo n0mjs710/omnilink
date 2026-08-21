@@ -1,167 +1,210 @@
 # PLAN.md — Phased Build Plan
 
-Ordering principle: get real RF audio flowing through the core as early as
-possible (phase 2), because the routing core is the one genuinely novel
-part; everything after that is porting things we've already built once.
-Each phase has an **acceptance gate**; a phase isn't done until its gate
-passes, and production migration only follows gates (D-13).
+**Ordering principle:** get real RF audio through the core as early as
+possible, then make it a credible hblink3 replacement, then add the
+legacy edges. The routing core is the one genuinely novel part;
+everything after it is porting things we have already built once.
 
-The D-02 revision strengthened this ordering. With the burst as the frame
-payload, the first two adapters are near-passthrough rather than
-translators, so phase 2 is smaller and first audio comes sooner — which
-means IPSC and CC land against a core that has already been on the air
-instead of against a design.
+Each phase has an **acceptance gate**. A phase is not done until its gate
+passes, and no production migration happens before the relevant gate
+(D-24).
 
-Implementer notes: docs are normative; deviations use the flag-then-fix
-pattern (STYLE.md). Design questions that the docs don't answer go to
-the project owner (N0MJS) — do not improvise policy.
+Two consequences of D-12 shape this plan and are worth stating up front,
+because they are what changed:
+
+- **ACLs and the dynamic-rules engine are phase 1**, not backlog. A
+  network cannot cut over to a router that will not express its current
+  rules or admit its current repeaters.
+- **Phase 3 exists at all** because "replaces hblink3" is a claim that
+  has to be demonstrated against a real hblink3 config, not asserted.
 
 ---
 
-## Phase 0 — Skeleton (small)
+## Phase 0 — Skeleton
 
-- Repo scaffolding: Makefile, lifted modules copied in (`dmr/`,
-  `eventloop`, `toml`, `net`, `log`, `crypto`), `make test` runs the
-  lifted modules' existing self-tests under this tree.
+- Repo scaffolding: Makefile (`-std=c11 -Wall -Wextra -Werror -O2`,
+  libc only), directory layout per ARCHITECTURE §6.
+- Lifted modules copied in: `dmr/`, `eventloop`, `toml`, `net`, `log`,
+  `crypto`. `make test` runs their existing self-tests under this tree.
+- **Close the `dmr/` gap deliberately** (FRAME §4.1): add the Golay(20,8)
+  slot-type encoder and colour-code-parameterized VHEAD/VTERM. Doing it
+  here, on purpose, prevents an implementer hitting it mid-adapter
+  against a read-only vendored module. Upstream it.
 
-**Gate:** clean build + lifted-module tests green on the dev server.
+**Gate:** clean build, lifted-module tests green on the dev server, and a
+unit test that builds a slot type at a non-default colour code.
 
 ## Phase 1 — Core (the biggest single phase)
 
-- `frame.h` (layout + packed-field accessor macros, unit-tested
-  byte-exact against FRAME.md).
-- `config.c`: TOML → immutable system/bridge tables + full rejection
-  suite (ROUTING.md §8 validations).
-- `core.c`/`route.c`: stream table, bridge lookup, talker arbitration,
-  hang time, timeouts, loop rules; unit-tested against scripted frame
-  sequences (no sockets needed — call `nx_core_ingress` directly).
-- `event.c`: event bus, unified log, Unix snapshot+stream socket.
-- `main.c`: startup/shutdown/signals; a `null` test adapter (loops frames,
-  emits events) proving the loop+event plumbing end-to-end.
+- **`frame.h`** — layout plus packed-field accessor macros, unit-tested
+  byte-exact against FRAME §1.
+- **`config.c`** — `omnilink.toml` → the immutable system table;
+  hostname resolution at startup (D-22).
+- **`rules.c` + `validate.c`** — `rules.toml` → a generation-tracked
+  rules arena, with the full rejection suite of CONFIG §6.1. Every
+  rejection names its line and its remedy; the tests assert on the
+  *messages*, not just on the failure.
+- **`omnilink --check-config`** — same validator, exits non-zero
+  (CONFIG §6.2).
+- **`acl.c`** — the two-part grammar, four ACL types, global-then-system
+  layering, first-denial-wins, fail-closed (ROUTING §2.1).
+- **`core.c` / `route.c`** — stream table; the `(system, slot, tgid)`
+  bridge index with multi-bridge fan-out; per-bridge arbitration; the
+  dynamic-rules engine with its asymmetric triggers and 10 s sweep;
+  timeouts; loop cadence detection. Unit-tested against scripted frame
+  sequences — no sockets needed, call `nx_core_ingress` directly.
+- **`channel.c`, `dmrlc.c`** — shared hang/contention and LC handling,
+  unit-tested standalone.
+- **`event.c`** — event bus, unified log, bidirectional control socket,
+  snapshot serializer (EVENTS §3–§7).
+- **Live reload** — validate-then-swap, generation-tracked arenas,
+  in-flight streams pinned (CONFIG §6.3).
+- **`main.c`** — startup, shutdown, signals; a `null` test adapter that
+  loops frames and emits events, proving the loop and event plumbing end
+  to end.
 
-**Gate:** `make test` green including a two-fake-adapter routing test:
-scripted call on fake A appears on fake B with correct TGID rewrite,
-arbitration, hang time, and a correct event trail on the socket.
+**Gate:** `make test` green, including —
 
-## Phase 2 — HBP + OBP adapters (first real audio)
+1. A two-fake-adapter routing test: a scripted call on fake A appears on
+   fake B with correct TGID rewrite, arbitration, hang behavior, and a
+   correct event trail on the socket.
+2. A **fan-out** test: one ingress stream matching three bridges is
+   delivered to all three, with per-bridge arbitration independent.
+3. A **dynamic-rules** test covering activation on call start,
+   deactivation on call end, timer reset from own-TGID traffic, sweep
+   timeout, and **timeout deferral while a call is in progress** — the
+   most user-visible thing to get wrong (ROUTING §4.4).
+4. An **ACL** test asserting enforcement order and that an unlisted ID
+   gets the opposite action.
+5. A **reload** test: a bad rules file changes nothing and reports its
+   findings; a good one swaps; a call in flight across the swap completes
+   on its original rules.
 
-- HBP adapter (master mode first, peer mode second) per ADAPTERS.md §2,
-  with conformance vectors cross-checked against dmr_utils3 output;
-  includes local repeat with static per-repeater TG/slot ACLs (D-18,
-  filtering local + bridge-egress delivery per D-03), endpoint
-  classification from login fields (D-03), and drop-event reporting
-  (`slot_busy` etc., D-15).
-- OBP adapter per ADAPTERS.md §4 (lift obp_link.c).
-- Live test on the dev server: a hotspot/repeater on OmniLink-HBP bridged
-  to (a) another HBP system and (b) HBlink4 over OBP.
+## Phase 2 — HBP + OBP + XLX (first real audio)
 
-**Gate:** clean audio, correct metadata (src/dst/peer on the far
-dashboard), correct hang-time behavior, in **both directions** on both
-pairs — the live-verified standard used for the hblink4 openbridge work.
+- **HBP adapter**, split per ARCHITECTURE §3.1: `hbp_proto.c` (master
+  mode first, peer mode second) and `hbp_service.c` (endpoint table,
+  local repeat, static per-endpoint delivery filtering, endpoint
+  classification). Conformance vectors cross-checked against
+  `dmr_utils3` output.
+- **OBP adapter** — lift `obp_link.c`; per-peer stream pools and stream
+  dedupe.
+- **XLX adapter** — HBP peer plus the module link. Port hblink3's
+  `tests/test_xlx_link.py`, which already encodes xlxd's five acceptance
+  gates as assertions, including the reference vector that reproduces a
+  known-good link burst byte for byte.
+- Live test on the dev server: a hotspot or repeater on OmniLink-HBP
+  bridged to (a) another HBP system and (b) HBlink4 over OBP.
 
-Since the D-02 revision these two adapters are near-passthrough, so this
-phase is markedly smaller than originally planned and first audio arrives
-correspondingly earlier. The gate proves the routing core, arbitration,
-hang, and retarget LC splicing — not a representation round trip, which
-no longer exists on this path.
+**Gate:** clean audio and correct metadata (src, dst, peer on the far
+dashboard), correct hang behavior, in **both directions** on both pairs —
+the live-verified standard used for the hblink4 OpenBridge work.
 
-### Phase 2 rider — XLX adapter
+**XLX rider gate, separate and non-blocking:** connect to a public XLX
+reflector, confirm on *that reflector's* dashboard that the expected
+module was joined, and pass audio both ways to a bridged HBP system. The
+local daemon cannot self-verify this — no acknowledgement exists
+(ADAPTERS §4.3) — so this gate depends on scheduling, not engineering,
+and must not hold up the phase-2 audio gate.
 
-XLX is HBP outbound plus a module link (ADAPTERS.md §6), so it becomes
-available as soon as HBP peer mode works and is built here rather than
-waiting. Its gate is **separate and does not block the phase-2 audio
-gate**, because passing it requires finding a live reflector with an
-observable dashboard, which is a scheduling dependency rather than an
-engineering one.
+## Phase 3 — hblink3 parity (the cutover gate)
 
-- Link construction with the five xlxd acceptance gates asserted as unit
-  tests (port hblink3's `tests/test_xlx_link.py`, which already encodes
-  them), including the reference vector that reproduces a known-good link
-  burst byte-for-byte.
-- Config validation: module letter A–Z, module numbers rejected with the
-  remedy, TS2/TG9 injection, one-bridge and no-unit-target rules.
+This is the phase that makes "replaces hblink3" true rather than
+asserted.
 
-**Gate:** connect to a public XLX reflector, confirm on *that reflector's*
-dashboard that the expected module was joined, and pass audio both ways to
-a bridged HBP system. Note the local daemon cannot self-verify this — no
-acknowledgement exists (ADAPTERS.md §6.3).
+- **`tools/rules_migrate.py`** — convert `rules.py` + `hblink.cfg` to
+  `rules.toml` + `omnilink.toml`, reporting anything it cannot represent
+  rather than guessing, and running its own output through
+  `--check-config` (CONFIG §8).
+- **The parity suite** — take a real production `rules.py`, convert it,
+  and drive identical scripted traffic through both hblink3 and OmniLink,
+  asserting identical routing decisions: same members reached, same
+  rewrites, same arbitration outcomes, same dynamic-rule state
+  transitions. Differences are either bugs or documented departures
+  (there is exactly one, D-16), and any undocumented difference blocks
+  the gate.
+- **Shadow deployment** — OmniLink alongside the live hblink3, on
+  separate ports, fed real traffic, with its decisions logged and
+  compared. Never double-binding a production port (D-24).
+- **Dashboard v1** (EVENTS §8): backend model, WebSocket, front-end
+  ported from hblink4, bridge-matrix view, last-heard, endpoint tables.
 
-## Phase 3 — Replay harness + dashboard v1
+**Gate:** the parity suite passes on a real config; one week of shadow
+running with no unexplained routing divergence; the dashboard tracks a
+live call end to end (`call_start` within 1 s, survives daemon restart);
+a rules reload is demonstrated on the shadow instance with a call in
+flight.
 
-*(PORT removed per D-07; federation is OBP, already built in phase 2.)*
+**Only after this gate** is OmniLink a candidate to succeed hblink3 on a
+live network.
 
-- Replay harness in `tests/replay/`: feed captured wire packets directly
-  into an adapter's ingress and capture its egress, no radios and no
-  second adapter in the path. Retro-fit phase-2 vectors into automated
-  replay tests.
-- Dashboard v1 (DASHBOARD.md): backend model + WebSocket, front-end ported
-  from hblink4 dashboard, bridge-matrix view, last-heard, peer tables.
+## Phase 4 — IPSC
 
-**Gate:** two OmniLink instances bridged over OBP pass replayed and live
-audio; dashboard tracks a live call end-to-end (call_start latency < 1 s,
-survives daemon restart).
-
-## Phase 4 — IPSC adapter
-
-- Port ipsc2hbpc's IPSC engine + jitter-buffer egress clock; peer mode
-  first (join existing KS-DMR IPSC network from a **test** instance),
-  master mode second.
-- Vectors from live IPSC captures (we have production access + dmrlink3 as
-  reference decoder).
+- Port ipsc2hbpc's IPSC engine plus the jitter-buffer egress clock. Peer
+  mode first — join the existing KS-DMR IPSC network from a **test**
+  instance — master mode second.
+- Vectors from live IPSC captures; we have production access and
+  dmrlink3 as a reference decoder.
 
 **Gate:** MOTOTRBO repeater ↔ HBP hotspot through OmniLink, clean audio
-both ways, pacing verified against a real repeater. Only after soak
-(≥ 1 week shadow running) does it become a candidate to succeed ipsc2hbpc
-in production.
+both ways, pacing verified against a real repeater. Only after at least
+one week of shadow running does it become a candidate to succeed
+ipsc2hbpc in production (D-24).
 
-## Phase 5 — CC adapter + unit calls
+## Phase 5 — CC-CC
 
-- Lift cccc_link.c and the solved AMBE translation (cccc_ambe.c, D-11)
-  verbatim; lock the fix in with ingress/egress conformance vectors
-  validated against known-good HBP vectors of the same audio.
-- Subscriber registry + unit-call routing (ROUTING.md §6).
+- Lift `cccc_link.c` and the solved AMBE translation (`cccc_ambe.c`)
+  **verbatim**; lock the fix in with ingress and egress conformance
+  vectors validated against known-good HBP vectors of the same audio
+  (D-11).
+- Bound-endpoint validation: one bridge, injected nominal slot, exposed
+  TGID, never a unit target (D-07).
 
-**Gate:** CC: clean audio both ways against the production c-Bridge (test
-conduit). Unit calls: hotspot↔hotspot private call across systems.
+**Gate:** clean audio both ways against the production c-Bridge over a
+test conduit, with the AMBE vectors green.
 
-## Phase 6 — Hardening & the wanted extras (backlog, ordered on demand)
+## Phase 6 — Unit calls, data, hardening
 
-Dynamic bridge rules (hblink3 ACTIVE/ON/OFF/timeout/trigger semantics on
-the existing `enabled` flag) · repeater-supplied subscriptions via HBP
-`options` at login (D-03 limiter semantics) · DATA_BURST forwarding HBP↔IPSC · talker
-alias / TALKER_META · ingress ACL polish · multi-core dashboard
-aggregation · systemd units + INSTALL.md + CONFIGURING.md to the standard
-of the existing repos · soak, fuzz malformed-packet paths, valgrind clean.
+- Unit-call routing and the target route cache (ROUTING §6).
+- `DATA_BURST` forwarding between burst-native adapters (D-27).
+- Repeater-supplied subscriptions via HBP `options` at login, with D-03
+  limiter semantics.
+- Talker alias / `TALKER_META`.
+- Loop circuit breaker as configurable policy (D-19).
+- Multi-instance dashboard aggregation (EVENTS §9).
+- systemd units, `INSTALL.md`, `CONFIGURING.md` to the standard of the
+  existing repos.
+- Soak, fuzz the malformed-packet paths, valgrind clean.
 
-## Phase 7 — Playback (talkback) adapter
+**Gate:** hotspot ↔ hotspot private call across systems; a fuzzed
+malformed-packet corpus produces no crash and no leak.
 
-The optional virtual adapter last, because it is the only adapter that is
-purely additive to operators and depends on machinery earlier phases build.
+## Phase 7 — Web rules editor
 
-- Implement the transport-less adapter per ADAPTERS.md §7 / D-26: `egress`
-  as a capture sink into a bounded, init-sized buffer; clocked
-  position-preserving replay via `nx_core_ingress` after CALL_END, re-keyed
-  onto the captured TGID and sourced from its own configured 24-bit radio ID.
-- **Group calls only** (D-26, revised 2026-08-15). Playback is not registered
-  as a reachable subscriber and is never addressed by radio ID — a federated
-  design cannot demand a globally unique registered ID per instance. This
-  also drops the phase-5 dependency: Playback no longer needs unit routing or
-  the subscriber registry, so it could move earlier if ever wanted.
-- Conformance (D-11): the loopback-identity vector — replayed frames
-  bit-identical to captured frames, since nothing re-encodes.
+Last, because it is purely additive and blocks nothing (D-09, CONFIG §7).
 
-**Gate:** on a live system, a caller hears their own audio back on the
-talkgroup, sourced from the playback ID, with correct timing.
+- Reads and writes `rules.toml`; no database, no second source of truth.
+- Validates by shelling `omnilink --check-config`.
+- Applies via `reload` on the control socket, surfacing findings verbatim
+  when a reload is refused.
+- Preserves comments and formatting where practical.
+
+**Gate:** an operator edits a bridge in the browser, the change lands in
+git-diffable TOML, and the daemon picks it up with a call in flight and
+no audio interruption.
 
 ---
 
 ## Standing risks
 
-| Risk | Carried where |
-|------|---------------|
-| Burst reconstruction for IPSC/CC breaks a receiver's expectations (EMB/LC nuance) | Narrowed by D-02: HBP/OBP no longer reconstruct at all, so this risk is now confined to the two legacy adapters, which ship last against a core already proven on air; `dmr/` is the reference |
-| Header/LC disagreement in a constructed burst (FRAME.md §4.1 rule 1) | The cost of a burst-native core; invisible to any test that does not decode audio, so it is a conformance-vector requirement, not a review item |
-| CC's exotic AMBE representation regresses in the port | D-11 solved it in cc2obp; vectors lock it in; CC ships last anyway |
-| A stalled adapter freezes the whole (single-threaded) daemon | Accepted at D-22 scope: systemd watchdog restart + instance federation bound the blast radius (D-04) |
-| Slot-arbitration edge cases at busy sites | slot logic confined to adapters; `slot_busy` events make it observable |
-| Design/implementation drift under a different model | STYLE.md is binding; DEVIATIONS.md; docs normative |
+| risk | carried where |
+|---|---|
+| Header/LC disagreement in a constructed or retargeted burst | The cost of a burst-native core. Invisible to any test that does not decode audio, so it is a conformance-vector requirement (D-11), not a review item. `dmrlc.c` exists to keep it in one place. |
+| Burst reconstruction for IPSC/CC breaks a receiver's EMB/LC expectations | Narrowed by D-05: HBP, OBP, and XLX never reconstruct, so this is confined to the two legacy adapters, which ship last against a core already proven on air. `dmr/` is the reference. |
+| CC's exotic AMBE representation regresses in the port | Solved once in cc2obp; vectors lock it in; CC ships last anyway (D-11). |
+| Parity suite finds hblink3 behavior the docs did not capture | Expected, and the reason phase 3 exists. Each finding is either a bug fixed or a DEVIATIONS entry plus a DECISIONS update — never a silent difference. |
+| Reload swaps rules under a live call | Directly addressed by generation-pinned streams (CONFIG §6.3), and explicitly tested in the phase-1 gate. |
+| A stalled adapter freezes the single-threaded daemon | Accepted at D-20 scope: systemd watchdog restart plus instance federation bound the blast radius (D-08). |
+| Blocking name resolution deafens the daemon at scale | Structurally prevented: resolve at startup only (D-22). Grep for `getaddrinfo` outside `config.c` is a review check. |
+| Slot-arbitration edge cases at busy sites | Slot logic confined to `channel.c`; `slot_busy` events make it observable (D-17). |
+| Design/implementation drift under a different model | STYLE.md is binding; DEVIATIONS.md is the pressure valve; docs are normative. |

@@ -10,7 +10,7 @@ implementers**. When in doubt, open `ipsc2hbpc/src/` and match it.
 - C11 (`-std=c11`), POSIX 2008 (`-D_POSIX_C_SOURCE=200809L`).
 - `-Wall -Wextra -Werror -O2`; builds warning-clean or it doesn't merge.
 - Dependencies: libc (librt if needed). **Nothing else — not even
-  libpthread; the daemon is single-threaded by design (D-04).** No
+  libpthread; the daemon is single-threaded by design (D-08).** No
   libevent, no OpenSSL (crypto.c carries its own SHA/HMAC), no cJSON
   (events are printf-formatted; we only *emit* JSON, never parse it in C).
 - One `Makefile`, plain make, `make`/`make test`/`make clean`. Objects live
@@ -45,6 +45,10 @@ implementers**. When in doubt, open `ipsc2hbpc/src/` and match it.
 - No allocation on the datapath (ARCHITECTURE.md §4). `malloc` appears in
   `*_new()` at startup and nowhere else. If an implementer needs a dynamic
   structure mid-call, the design is wrong — stop and raise it.
+- **The one carve-out is a rules reload** (D-23, CONFIG.md §6.3), which
+  builds and frees a table arena on the control plane. Those allocation
+  sites carry a `/* control plane: D-23 */` comment so the distinction
+  survives a reader who only remembers the headline rule.
 - No concurrency, full stop: no threads, mutexes, semaphores, condvars,
   or atomics. `grep -E 'pthread_|sem_|_Atomic|atomic_'` over `src/` must
   return nothing. If an implementer feels the need for any of these, the
@@ -71,13 +75,20 @@ obvious, no changelog comments.
 - `tests/` mirrors the ipsc2hbpc/cc2obp harness style: small C test
   binaries + shell/Python drivers, run by `make test`, no framework deps.
 - Unit level: frame pack/unpack (incl. the packed-field accessor macros),
-  bridge-table lookup, arbitration/hang state machine, config parse
-  (valid + a rejection suite).
+  bridge-table lookup and fan-out, arbitration/hang state machine, the
+  dynamic-rule engine, ACL grammar and layering, config parse (valid +
+  a rejection suite).
+- **Rejection tests assert on the message, not just the failure.** A
+  validator that rejects the right file with the wrong explanation has
+  failed its actual job (CONFIG.md §6.1).
 - Adapter level: golden conformance vectors per FRAME.md §7 — an adapter
   PR without vectors is incomplete by definition.
 - System level: `tests/replay/` Python harness feeding captured wire
   packets straight into one adapter's ingress and asserting what comes out
   of another adapter's socket.
+- Parity level: `tests/parity/` drives identical traffic through hblink3
+  and OmniLink from one converted config and asserts identical routing
+  decisions (PLAN.md phase 3). An undocumented divergence is a bug.
 
 ## Process
 
