@@ -67,10 +67,20 @@ semantics lie.
 - Present voice as the 33-byte DMR burst (FRAME §4.1); assign
   `stream_tag`; stamp `origin_system`, `origin_endpoint`, and
   `origin_slot`.
-  For burst-native protocols (HBP, OBP, XLX) this is a copy. For
-  bare-AMBE protocols (IPSC, CC) the adapter *builds* the burst with
-  `dmr/`, with the LC agreeing with the frame header and every
-  synthesized field taken from configured values.
+  For burst-native protocols (HBP, OBP, XLX) this is a copy.
+
+  **IPSC and CC-CC re-pack rather than copy, and they are not the same
+  case.** IPSC carries the same DMR protocol elements HBP does — voice
+  headers and terminators, a DMR LC, embedded LC, superframe position,
+  timeslot — just arranged differently and without the over-the-air FEC
+  and interleave. Its adapter therefore *re-packs* real material: the LC
+  is lifted from IPSC's own LC, not invented, and only the structural
+  wrapping (BPTC, slot type, sync, EMB) is built. CC-CC genuinely does
+  carry bare AMBE plus call signalling, so its adapter constructs more.
+
+  In both cases the LC must agree with the frame header, and anything
+  actually built comes from `dmr/`'s tables (D-28) — never from a
+  captured constant.
 - **Stamp `origin_slot` always**, including on unslotted transports,
   using the nominal slot D-07 assigns. It is part of the routing key now
   (D-04); a frame carrying 0 cannot be routed.
@@ -356,18 +366,35 @@ reason this section exists.
   bookkeeping.
 - **Modes:** `peer` — join an existing IPSC network, the primary mode;
   and `master` — bootstrap master, as dmrlink does.
-- **Ingress:** IPSC group/private voice → burst type classification, AMBE
-  extracted as 49-bit and then **built into a 33-byte burst** (`dmr/`:
-  49→72, BPTC LC, slot type, sync) per FRAME §4.1. IPSC is one of the two
-  adapters that constructs rather than copies, so the LC must agree with
-  the frame header. Structure (slot type, EMB, sync) comes from `dmr/`'s
-  fixed CC-1 tables; IPSC carries no colour code on the wire in either
-  direction (D-28). Call boundaries from IPSC burst types; `origin_endpoint`
-  from the IPSC RptrId field;
-  per-network keepalive state → `nx_core_system_state` plus events.
-- **Egress:** IPSC voice packet synthesis (the ipsc2hbpc HBP→IPSC path,
-  already solved), slot from the egress target, IPSC sequence and RTP
-  fields owned here.
+**IPSC carries the same DMR protocol information HBP does.** It is not a
+bare-AMBE transport. On the wire it has `VOICE_HEAD` and `VOICE_TERM`
+burst types, a DMR LC, the reassembled embedded LC on burst E, superframe
+position, and timeslot — the same material, arranged differently and
+without the over-the-air FEC and interleave. So this adapter **re-packs
+real elements**; it does not invent a call out of AMBE.
+
+What IPSC does *not* carry is the assembled burst's structural wrapping:
+BPTC encoding, sync patterns, slot type, and the EMB signalling field.
+Colour code lives in EMB and slot type, so it is absent here in both
+directions, which is why D-28's fixed CC-1 tables cost nothing.
+
+- **Ingress:** burst type classification → call boundaries; AMBE
+  extracted as 3 × 49-bit and re-packed into a 33-byte burst (`dmr/`:
+  49→72, BPTC, slot type, sync, EMB) per FRAME §4.1. **The LC comes from
+  IPSC's own LC**, not from invented values, and must agree with the
+  frame header. `vseq` comes from real superframe position — burst E is
+  explicitly identifiable (`GV_BE_FLAG`), so `vseq = 7` never applies
+  here. `origin_endpoint` from the IPSC RptrId field; per-network
+  keepalive state → `nx_core_system_state` plus events.
+- **Egress:** unpack the burst back to AMBE and IPSC's own fields, slot
+  from the egress target, IPSC sequence and RTP fields owned here — the
+  ipsc2hbpc HBP→IPSC path, already solved.
+- **Retarget rewrites the IPSC LC in place.** IPSC has the same
+  LC-in-payload duplication HBP does: the packet carries both header
+  src/dst and a DMR LC, and a member with a different TGID needs both
+  changed together. dmrlink3 does exactly this (`bridge.py`, "Rewrite
+  DST GROUP + IPSC SRC in DMR LC"). This is why the IPSC loopback vector
+  asserts on the LC and not only on the AMBE bits (FRAME §7).
 
 ### 5.1 The egress clock — the system's sole pacing exception (D-15)
 

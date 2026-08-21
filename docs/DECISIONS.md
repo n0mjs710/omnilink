@@ -147,9 +147,11 @@ Accepted knowingly:
   have paid none. Lossless — the 72-bit FEC is derived from the 49 bits,
   so 49→72→49 recovers exactly — so this is wasted microseconds, not
   degraded audio, and it is the shrinking c-Bridge-to-c-Bridge case.
-- **HBP's LC-in-payload duplication becomes a core concern.** Source and
-  destination appear both in the frame header and inside the burst's Link
-  Control, and every retarget must keep them in sync. This is a real,
+- **LC-in-payload duplication becomes a core concern.** Source and
+  destination appear both in the frame header and inside the Link
+  Control, and every retarget must keep them in sync. This is not an HBP
+  quirk — IPSC carries a DMR LC too and dmrlink3 rewrites it in place on
+  retarget — so it is a property of DMR routing generally. This is a real,
   recurring bug class. hblink3 solves it with per-stream precomputed LCs
   and that approach is the reference implementation.
 - A legacy→legacy path synthesizes burst structure (sync, EMB, slot
@@ -748,9 +750,10 @@ Three rules, deliberately not one rule:
   to end. Normalizing would re-encode the slot type and both EMB halves
   on every burst on the dominant path, forfeiting D-05, to change a value
   nobody downstream reads.
-- **Use 1 when you must invent one.** IPSC and CC-CC ingress construct
-  bursts and the XLX module link builds one from nothing; all use
-  `dmr/`'s precomputed CC-1 tables.
+- **Use 1 when you must invent one.** IPSC and CC-CC re-pack their
+  traffic into bursts and the XLX module link builds one from nothing;
+  none of those wires carries EMB or slot type, which is where colour
+  code lives, so all use `dmr/`'s precomputed CC-1 tables.
 
 Colour code is not timeslot. A repeater must be *told* which slot a call
 belongs in, because it has two and cannot infer the choice — so slot is a

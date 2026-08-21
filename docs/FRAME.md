@@ -173,8 +173,9 @@ payload_len = 33
 
 For **HBP and OBP** this is a copy — ingress and egress touch the burst
 only where routing requires it (§4.1.1). For **IPSC and CC**, which carry
-bare 3 × 49-bit AMBE, the adapter builds the burst on ingress and reduces
-it on egress; `dmr/` implements every primitive (`dmr_ambe_49_to_72` and
+AMBE plus unpacked DMR elements rather than an assembled burst, the
+adapter re-packs on ingress and unpacks on egress; `dmr/` implements
+every primitive (`dmr_ambe_49_to_72` and
 its inverse, BPTC, embedded LC, RS(12,9), and the precomputed slot-type,
 EMB, and sync tables).
 
@@ -357,9 +358,15 @@ it is declared done**:
 3. **The loopback identity** — for burst-native protocols,
    `ingress(egress(f))` reproduces the burst bits exactly, *including*
    CALL_START and CALL_END, which is why those carry the burst (§4.2).
-   For IPSC and CC, whose native form is 3 × 49-bit AMBE, the identity is
-   asserted on the AMBE bits only: synthesized burst fields are not
-   round-tripped and must not be asserted on.
+   For **IPSC**, whose wire carries the LC, embedded LC, headers, and
+   terminators in unpacked form, the identity is asserted on the AMBE
+   bits **and the LC** — a retarget rewrites that LC in place (dmrlink3
+   does exactly this), so a vector that ignores it would miss the whole
+   addressing bug class. For **CC-CC**, whose wire really does carry
+   bare AMBE plus call signalling, assert on the AMBE bits only.
+
+   In both, purely structural fields the origin never carried — sync,
+   slot type, EMB — are not round-tripped and must not be asserted on.
 
 Vector sources: paired live captures, cross-checks against `dmr_utils3`
 for HBP and IPSC framing, and `cccc_ambe.c`'s golden data for CC.

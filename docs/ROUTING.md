@@ -364,11 +364,14 @@ Until phase 6: `UNIT` streams drop with an event.
 
 ## 7. LC coherence on retarget
 
-Because the frame carries the on-air burst verbatim (D-05), source and
-destination appear **twice** — in the frame header and inside the burst's
-Link Control — and every retarget must keep them in agreement. A
+Source and destination appear **twice** — in the frame header and inside
+the Link Control — and every retarget must keep them in agreement. A
 mismatch is inaudible to every test that does not decode audio, and
 wrong on the air.
+
+This is a property of DMR routing, not of one protocol: HBP carries the
+LC inside the burst (D-05), and IPSC carries a DMR LC of its own that
+dmrlink3 rewrites in place on retarget. Both hit the same rule.
 
 The rule: **build the stream's LC once, at stream open, and splice it on
 every egress with the target member's TGID.** hblink3 does exactly this
