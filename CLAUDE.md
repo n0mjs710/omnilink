@@ -66,6 +66,9 @@ Check here before "fixing" one of these:
   peer-to-peer mesh whose master just holds the bootstrap list. Do not
   normalize them (CONFIG §2.4). `endpoint` is the neutral term where the
   core or event schema must span protocols.
+- **The core enforces no ACLs** (D-31). Adapters do, at ingress, by
+  querying `acl.c`. TGID ACLs are HBP-only — they limit local repeat,
+  the one thing bridge rules cannot reach.
 - **A burst can carry a "wrong" colour code end to end.** Never read it,
   never rewrite it, build at CC 1 (D-28). `dmr/` needs no Golay(20,8)
   encoder; `xlx_slot_type()` is not ported; `colorcode` exists only in

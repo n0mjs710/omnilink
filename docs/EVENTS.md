@@ -110,7 +110,7 @@ fields.** Plane: S = systems, B = bridge, G = global.
 | `loop_suspected` | B | bridge, src, systems involved, capture count and gaps — **alarm class**, surface prominently (D-19) | core |
 | `slot_busy`, `payload_unsupported`, `endpoint_down` | S | system, slot, dropped stream, holder (including local holders) — the **outcome** half; join with `call_start` intent (D-17) | adapters |
 | `bridge_member_state` | B | bridge, member, `active`, cause (`trigger_on`\|`trigger_off`\|`timeout`\|`operator`\|`reload`) | core |
-| `acl_denied` | G | acl that fired, system, src or tgid, slot — rate-limited (ROUTING §2.1) | core; adapters for `reg` |
+| `acl_denied` | G | acl that fired, system, src or tgid, slot — rate-limited (ADAPTERS §1.3) | adapters |
 | `reload_ok`, `reload_failed` | G | generation, findings (all of them, verbatim) | core |
 | `xlx_link_sent` | S | module, target tgid, unlink-then-link — **attempt only**; XLX never acknowledges a link, so this must never render as confirmed state (ADAPTERS §4.3) | xlx |
 | `unbridged`, `unit_no_route`, `malformed`, `stream_pool_full` | G | rate-limited diagnostics | both |

@@ -1,7 +1,7 @@
 # ROUTING.md — Routing Core Semantics
 
-The core owns the bridge table, the ACL layer, the stream table,
-per-bridge arbitration, the dynamic-rule engine, and the event bus. It
+The core owns the bridge table, the stream table, per-bridge
+arbitration, the dynamic-rule engine, and the event bus. It
 reads the DMRD header and the `bits` byte (FRAME §2) and knows nothing
 else about any protocol: no FEC, no framing, no sockets, no slot state,
 no pacing.
@@ -35,54 +35,27 @@ are three — §3.1, §4.3, §5.1.
 
 ## 2. Ingress
 
-**Ingress is unconditional.** Adapters forward every stream to the core,
-including streams local repeat also delivered in-system and streams that
-match no bridge. An unmatched stream still feeds the unit route cache
-(§6) and emits a rate-limited `unbridged` event before being dropped.
+**Ingress is unconditional.** Adapters forward every *admitted* stream to
+the core, including streams local repeat also delivered in-system and
+streams that match no bridge. An unmatched stream still feeds the unit
+route cache (§6) and emits a rate-limited `unbridged` event before being
+dropped.
 
 A router that sees only the traffic it routes cannot tell an operator
 what their network is doing, and the dashboard, accounting, and route
 cache would all be lying.
 
-### 2.1 ACL admission
+**ACLs are admission, not routing, and the core has no ACL layer**
+(D-31). Traffic an adapter refuses never reaches the core; the adapter
+events the denial. Enforcement is at the edge because the thing ACLs
+exist to control — local in-system repeat — never transits the core
+(ADAPTERS §1.3).
 
-Every ingress packet passes the ACL layer before anything else. The model
-is hblink3's exactly (D-12), because operators' existing ACL strings must
-keep meaning what they meant.
+**Bridge rules are the routing whitelist.** A TGID that is no member's
+TGID on that `(system, slot)` matches nothing and goes nowhere. There is
+no second gate to configure and no way for the two to disagree.
 
-**Grammar.** One string, one action: `PERMIT:` or `DENY:` followed by IDs
-and/or inclusive ranges, or `ALL`. Exactly one action per ACL — mixing is
-not expressible and is a config error.
-
-An ACL defines the action for the IDs it lists **and the opposite action
-for every ID it does not**. That second half is the part operators get
-wrong, and the validator's error text says so.
-
-| ACL | applies to | range | notes |
-|---|---|---|---|
-| `reg_acl` | endpoint registration (login) | 1 … 4294967295 | HBP server and IPSC master systems only; outbound links and OBP accept no registrations. **Always enforced** — `use_acl` cannot disable it. |
-| `sub_acl` | source radio ID | 1 … 16776415 | every voice and data stream |
-| `tgid_ts1_acl` | destination TGID on slot 1 | 1 … 16776415 | |
-| `tgid_ts2_acl` | destination TGID on slot 2 | 1 … 16776415 | |
-
-**Order**, first denial wins, all must pass: global `sub_acl` → global
-`tgid_ts*_acl` (selected by the stream's slot) → system `sub_acl` →
-system `tgid_ts*_acl`. Registration is separately gated: global **and**
-system `reg_acl` must both permit, or the login is refused.
-
-**Fail closed.** A malformed ACL is a startup or reload failure, never a
-silently-ignored ACL.
-
-**OpenBridge rider.** OBP systems do not register, and all OBP traffic is
-carried on slot 1, so the **global `tgid_ts1_acl`** is the control that
-governs it. An operator who filters OBP traffic with `tgid_ts2_acl` has
-built a filter that can never fire; the documentation must say so.
-
-Denials emit rate-limited `acl_denied` events naming the ACL that fired.
-An ACL that silently eats traffic is the hardest misconfiguration to
-diagnose.
-
-### 2.2 Bridge lookup
+### 2.1 Bridge lookup
 
 ```
 BRIDGE_SRC_INDEX[(system u16, slot u8, tgid u32)] -> member list
@@ -177,7 +150,7 @@ These are not conveniences layered on routing; they *are* routing, and
 they are built in phase 1 (D-12).
 
 ```
-active   bool      # gates ingress and egress (§2.2)
+active   bool      # gates ingress and egress (§2.1)
 to_type  NONE|ON|OFF
 timeout  seconds   # config states MINUTES; ×60 at load
 timer    time_t
@@ -415,6 +388,7 @@ owes a loopback-identity vector (D-11, FRAME §6).
 
 ## 9. What the core does not do
 
+- Enforce ACLs (D-31, ADAPTERS §1.3).
 - Parse the burst (D-25).
 - Modify the packet (FRAME §4.1).
 - Track per-member delivery outcomes (D-17).

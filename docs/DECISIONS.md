@@ -261,8 +261,8 @@ Because OmniLink retires hblink3, the features an existing network
 depends on are day-one scope:
 
 - **The full ACL model** — four types, the two-part grammar,
-  global-then-system layering, first-denial-wins, fail-closed,
-  `use_acl` and the one ACL it cannot disable (ROUTING §2.1).
+  global-then-system layering, first-denial-wins, fail-closed, `use_acl`
+  and the one ACL it cannot disable (ADAPTERS §1.3, D-31).
 - **The dynamic-rule engine** — `active`, `to_type`, `timeout`, and the
   `on`/`off`/`reset` trigger lists, with hblink3's exact activation,
   deactivation, timer-reset, and timeout-deferral behaviour (ROUTING §4).
@@ -429,12 +429,15 @@ ARCHITECTURE §1 does the sizing.
 ## D-21 — Policy in the core, mechanism at the edge
 
 The core decides *whether and where* a stream goes: bridge rules,
-dynamic-rule timers and triggers, ACL admission, arbitration, the unit
-route cache, loop observation. Single-copy policy is what makes one rules
+dynamic-rule timers and triggers, arbitration, the unit route cache,
+loop observation. Single-copy policy is what makes one rules
 file, one dashboard, and one truth possible.
 
 Adapters decide *how* it goes: TS/TGID rewrite execution, slot
-arbitration, hang, cadence, pacing, protocol state, local repeat.
+arbitration, hang, cadence, pacing, protocol state, local repeat, and
+ACL admission — which is policy the operator writes but which can only
+be enforced at the edge, because what it protects never transits the
+core (D-31).
 
 The same line explains why an adapter that drops on slot contention
 merely events it, and why adapters never hold rule fragments.
@@ -589,3 +592,37 @@ survived the path.
 The core already emits `call_end` with `reason=timeout` on that path, so
 this costs nothing beyond running the same trigger block from both exits.
 Nothing is synthesized downstream (D-14).
+
+## D-31 — Traffic ACLs are enforced at the adapter; TGID ACLs are HBP-only
+
+The core has no ACL layer. Bridge rules are already the routing
+whitelist — a TGID that is no member's TGID on that `(system, slot)`
+matches nothing and goes nowhere — so an ACL adds nothing to routing.
+
+What an ACL does add is control over traffic that never reaches the core:
+**local in-system repeat**. Without it, a user on one repeater can key an
+invented TGID and have it repeated to every other repeater on that system,
+and no bridge rule can stop that, because local repeat is not
+bridge-driven (D-18). Enforcement therefore belongs where local repeat
+happens — the HBP adapter.
+
+TGID ACLs are HBP-only for the same reason:
+
+- **IPSC cannot enforce it.** Peers hear each other directly and the
+  router is not in that path, so there is nothing to filter.
+- **OBP** has no need: its permitted TGIDs are exactly its bridge
+  memberships, already fail-closed (D-07).
+- **CC-CC and XLX** carry one talkgroup by construction.
+
+`sub_acl` is enforced by every adapter at ingress, since keeping a banned
+radio ID off the network applies wherever it enters, and hblink3 applies
+it on OpenBridge too. `reg_acl` stays at login (HBP server, IPSC master).
+
+hblink3 already works this way: `dmrd_acl_check` lives in `HBSYSTEM`, and
+`bridge.py` never checks an ACL. Grammar, layering, and enforcement order
+are in ADAPTERS §1.3.
+
+**ACLs are admission, not routing.** Refused traffic never reaches the
+core, so the core's view is of admitted traffic. The adapter events the
+denial, and the dashboard shows it as a denial rather than as an
+unbridged call.

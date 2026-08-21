@@ -47,7 +47,8 @@ because they are what changed:
 - **`omnilink --check-config`** — same validator, exits non-zero
   (CONFIG §6.2).
 - **`acl.c`** — the two-part grammar, four ACL types, global-then-system
-  layering, first-denial-wins, fail-closed (ROUTING §2.1).
+  layering, first-denial-wins, fail-closed (ADAPTERS §1.3). Enforced by
+  adapters, not the core (D-31).
 - **`core.c` / `route.c`** — stream table; the `(system, slot, tgid)`
   bridge index with multi-bridge fan-out; per-bridge arbitration; the
   dynamic-rules engine with its asymmetric triggers and 10 s sweep;
@@ -74,8 +75,9 @@ because they are what changed:
    deactivation on call end, timer reset from own-TGID traffic, sweep
    timeout, and **timeout deferral while a call is in progress** — the
    most user-visible thing to get wrong (ROUTING §4.4).
-4. An **ACL** test asserting enforcement order and that an unlisted ID
-   gets the opposite action.
+4. An **ACL** test asserting enforcement order, that an unlisted ID gets
+   the opposite action, and that a `tgid_ts*_acl` on a non-HBP system is
+   rejected.
 5. A **reload** test: a bad rules file changes nothing and reports its
    findings; a good one swaps; a call in flight across the swap completes
    on its original rules.

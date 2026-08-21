@@ -32,7 +32,7 @@ Size against the fan-out number, not the ingress number.
                 │                                              │
   UDP sockets ──┤   adapters                    core           │
   TCP (CC) ─────┤   hbp · ipsc · obp   ◀────▶   route · rules  │
-  timers ───────┤   cc  · xlx                   acl   · streams│
+  timers ───────┤   cc  · xlx                   streams        │
   control sock ─┤        │                          │          │
                 │        └────▶  event module  ◀────┘          │
                 │            (log + control socket)            │
@@ -82,9 +82,9 @@ taking a power hit.
 
 ## 3. Module boundaries
 
-**Core** — the bridge table, the ACL layer, the stream table, per-bridge
-arbitration, the dynamic-rule engine, the unit route cache, loop
-observation, event sequencing. Policy lives here (D-21): the core decides
+**Core** — the bridge table, the stream table, per-bridge arbitration,
+the dynamic-rule engine, the unit route cache, loop observation, event
+sequencing. Policy lives here (D-21): the core decides
 *whether and where* a stream goes.
 
 **Adapters** — all protocol machinery: auth, keepalives, endpoint state,
@@ -196,7 +196,7 @@ omnilink/
 │   ├── config.c/.h           # TOML → immutable system table
 │   ├── rules.c/.h            # TOML → generation-tracked rules arena
 │   ├── validate.c/.h         # the one validator (CONFIG §6.1)
-│   ├── acl.c/.h              # ACL grammar, layering, admission
+│   ├── acl.c/.h              # ACL grammar + lookup, called by adapters
 │   ├── core.c/.h             # ingress dispatch, stream table
 │   ├── route.c/.h            # bridge index, arbitration, dynamic rules
 │   ├── unitcache.c/.h        # target route cache (phase 6)

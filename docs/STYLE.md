@@ -27,8 +27,7 @@ implementers**. When in doubt, open `ipsc2hbpc/src/` and match it.
   UPPER_SNAKE in `*_const.h` where the list is long (house pattern).
 - **The `nx_` prefix is reserved for the adapter/core boundary contract**
   (from "nexus" — the meeting point): the core API adapters call
-  (`nx_core_*`, `nx_event_emit`, `nx_acl_check_reg`,
-  `nx_stream_tag_next`) and the contract types (`nx_adapter_ops`,
+  (`nx_core_*`, `nx_event_emit`, `nx_acl_*`, `nx_stream_tag_next`) and the contract types (`nx_adapter_ops`,
   `nx_egress_target`, `nx_system_cfg`) — i.e., everything declared in
   `adapter.h`, and nothing else. DMRD accessors are `dmrd_*`. Seeing `nx_` means
   "core data or the contract that carries it across the boundary."

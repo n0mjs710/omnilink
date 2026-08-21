@@ -264,7 +264,7 @@ member's initial state, and an operator can toggle it at runtime over
 the control socket (ROUTING §4.5) — which is how a trunk or reflector
 member gets taken out of a bridge without editing the file.
 
-## 5. ACLs (D-12, ROUTING §2.1)
+## 5. ACLs (D-31; grammar and enforcement in ADAPTERS §1.3)
 
 Global keys live in `[acl]`; per-system keys live in the `[[system]]`
 stanza and use the same names with an `_acl` suffix:
@@ -279,14 +279,17 @@ tgid_ts1_acl = "PERMIT:ALL"
 tgid_ts2_acl = "PERMIT:ALL"
 ```
 
-Grammar, layering, enforcement order, and the OpenBridge slot-1 rider are
-normative in ROUTING §2.1. Two config-level rules:
+Grammar, layering, and enforcement order are normative in ADAPTERS §1.3.
+Three config-level rules:
 
 - **`use_acl = false` does not disable `reg_acl`.** Registration
   admission is always enforced on systems that accept registrations.
 - **A malformed ACL is fatal, never ignored.** At startup the daemon
   refuses to start; on reload it refuses the swap and keeps the previous
   rules (§6).
+- **`tgid_ts1_acl` and `tgid_ts2_acl` are HBP-only** and a config error
+  on any other protocol (D-31). They exist to limit local in-system
+  repeat, which only HBP has.
 
 ## 6. Validation and reload
 
@@ -316,6 +319,9 @@ around rather than solved it. Specific messages the docs require:
   letter that number would correspond to.
 - A malformed ACL string, quoting the fragment that failed and restating
   that one ACL carries exactly one action.
+- A `tgid_ts*_acl` on a non-HBP system, saying that TGID ACLs limit
+  local repeat and that bridge membership is the filter on that
+  protocol (D-31).
 - Duplicate system names, and duplicate bridge names.
 
 **Duplicate `(system, slot, tgid)` across bridges is legal**, because

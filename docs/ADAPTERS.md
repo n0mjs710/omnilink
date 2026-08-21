@@ -38,7 +38,9 @@ void     nx_core_ingress(uint16_t sys, uint32_t tag,
 uint32_t nx_stream_tag_next(void);            /* FRAME §3.1 */
 void nx_core_system_state(uint16_t sys, uint32_t endpoint, bool up);
 void nx_event_emit(/* subsys, sys, ev, lvl, fields... */);
-bool nx_acl_check_reg(uint16_t sys, uint32_t endpoint_id); /* §1.3 */
+bool nx_acl_permit_reg(uint16_t sys, uint32_t endpoint_id);  /* §1.3 */
+bool nx_acl_permit_traffic(uint16_t sys, uint32_t src, uint32_t dst,
+                           uint8_t slot);                   /* §1.3 */
 ```
 
 Everything is a direct synchronous call on one thread — no queues, no
@@ -98,38 +100,86 @@ Egress is where the protocols differ, and one of them has no choice:
 This is entirely an adapter concern. The core neither knows nor cares
 which choice a system makes.
 
-### 1.3 Where ACLs are enforced
+### 1.3 ACLs are enforced here, and TGID ACLs are HBP-only
 
-Split by what the core can see (D-21):
+**The core has no ACL layer** (D-31). Bridge rules are already the
+routing whitelist: a TGID that is no member's TGID on that
+`(system, slot)` matches nothing and goes nowhere. The only thing an ACL
+adds is control over traffic that never reaches the core at all — **local
+in-system repeat** — so enforcement belongs where local repeat happens.
 
-- **Traffic ACLs** (`sub`, `tgid_ts1`, `tgid_ts2`) are **core policy**,
-  enforced in `acl.c` on ingress, before bridge lookup (ROUTING §2.1).
-  Adapters do not hold ACL state and do not filter traffic. This is what
-  keeps ACLs in the live-reloadable rules file with one implementation
-  and one enforcement order.
-- **Registration ACLs** (`reg`) are enforced by the adapter, at login —
-  the core never sees a login at all. The adapter *queries*
-  (`nx_acl_check_reg`) rather than holding a copy, so a reload takes
-  effect on the next registration attempt without adapter involvement.
+The purpose is concrete: without it, a user on one repeater can key an
+invented TGID and have it repeated to every other repeater on that
+system. Bridge rules cannot stop that, because local repeat is not
+bridge-driven (D-18).
+
+| ACL | applies to | where | notes |
+|---|---|---|---|
+| `reg_acl` | endpoint registration (login) | HBP server, IPSC master | **always enforced**; `use_acl` cannot disable it |
+| `sub_acl` | source radio ID of a call | every adapter, at ingress | keeps a banned radio off the network wherever it enters |
+| `tgid_ts1_acl` / `tgid_ts2_acl` | destination TGID, by slot | **HBP only** | limits local repeat; a config error on any other protocol |
+
+**Why TGID ACLs are HBP-only:**
+
+- **IPSC cannot enforce it.** Peers hear each other directly and the
+  router is not in that path (D-18), so there is nothing to filter.
+- **OBP** has no need: its permitted TGIDs are exactly its bridge
+  memberships, and an unmapped TGID is already fail-closed (D-07).
+- **CC-CC and XLX** carry one talkgroup by construction.
+
+**Grammar.** One string, one action: `PERMIT:` or `DENY:` followed by IDs
+and/or inclusive ranges, or `ALL`. Exactly one action per ACL — mixing is
+not expressible and is a config error. An ACL defines the action for the
+IDs it lists **and the opposite action for every ID it does not**. That
+second half is the part operators get wrong, and the validator's error
+text says so.
+
+**Order**, first denial wins, all must pass: global `sub_acl` → global
+`tgid_ts*_acl` (HBP, selected by slot) → system `sub_acl` → system
+`tgid_ts*_acl`. Registration is separately gated: global **and** system
+`reg_acl` must both permit, or the login is refused.
+
+**Fail closed.** A malformed ACL is a startup or reload failure, never a
+silently-ignored ACL.
+
+**Adapters query, never hold.** ACLs live in the reloadable rules arena,
+so the adapter calls `nx_acl_*` rather than caching a copy — a reload
+therefore takes effect on the next packet with no adapter involvement.
+
+Denials emit rate-limited `acl_denied` events naming the ACL that fired.
+An ACL that silently eats traffic is the hardest misconfiguration to
+diagnose.
 
 ### 1.4 Universal egress duties (core → wire)
 
+**Every value the adapter writes is handed to it.** An adapter does not
+know the rules and never consults them: the core resolves the bridge
+member (or the unit route cache) and passes the result as
+`nx_egress_target` — `tgid`, `slot`, and optionally a specific
+`endpoint`. The adapter is *told* where the traffic goes; it looks
+nothing up. That is D-21, and it is also the only thing that could work,
+since unit calls route from a cache no adapter can see.
+
+An adapter holding a private replica of bridge membership would be rule
+distribution to the edge, which is precisely what D-21 forbids.
+
 - **Copy once, rewrite everything in that pass.** The core hands a
-  `const` packet; the adapter copies it and rewrites the target slot in
-  the `bits` byte plus, where the member's TGID differs, the destination
-  in the header and in the LC together (FRAME §4.1, via `dmrlc.c`).
-  Repeater ID and wire `stream_id` pass through. CC-CC additionally
-  reduces the burst to AMBE (`dmr_ambe_72_to_49` ×3); IPSC unpacks to its
-  own field layout and mints its own identifiers.
+  `const` packet plus the target. The adapter copies it and writes
+  `t->slot` into the `bits` byte, and — where `t->tgid` differs from the
+  packet's destination — `t->tgid` into both the header and the LC
+  together (FRAME §4.1, via `dmrlc.c`). Repeater ID and wire `stream_id`
+  pass through. CC-CC additionally reduces the burst to AMBE
+  (`dmr_ambe_72_to_49` ×3); IPSC unpacks to its own field layout and
+  mints its own identifiers.
 - Slotted protocols call **`channel.c`** for per-`(system, slot)`
   arbitration, hang time, and the `stream_to` contention horizon
   (ROUTING §5.2), with local-repeat traffic in the same arbitration
   state. This module is shared precisely because it is the easiest thing
   in the project to get subtly different in two places.
-- **Preserve `dtype`/`vseq` from the incoming packet**; rewrite only the
-  timeslot in the `bits` byte (FRAME §1.1). For a headerless stream,
-  build a minimal LC from the packet's own src/dst and emit **no** wire
-  header (FRAME §3.1).
+- **Preserve `dtype`/`vseq` from the incoming packet** — `t->slot` is the
+  only part of the `bits` byte that changes (FRAME §1.1). For a
+  headerless stream, build a minimal LC from the packet's own src/dst and
+  emit **no** wire header (FRAME §3.1).
 - **Event every drop** — `slot_busy`, `payload_unsupported`, `endpoint_down` —
   so the log and dashboard can join the core's forwarded-to *intent* with
   the edge's *outcome* (D-17). Nothing is reported back to the core; it
