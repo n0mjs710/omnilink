@@ -457,16 +457,19 @@ right instant instead of shifting later bursts early. Timing correction,
 never loss concealment. Per-system configurable so live testing can
 settle how necessary it really is.
 
-Two further IPSC-wire-only behaviors, both carved deliberately (D-14,
-D-15) and permitted **nowhere else in the system**:
+Two further IPSC-wire-only behaviors, permitted **nowhere else in the
+system**:
 
 - A drained or vanished stream is closed with a **terminator**
-  (`translate.c`, `on_stream_timeout` → `emit_term`). IPSC has no
-  representation for "nothing," and a MOTOTRBO repeater left without a
-  terminator stays keyed.
+  (`translate.c`, `on_stream_timeout` → `emit_term`). This mirrors what
+  IPSC peers already do — a MOTOTRBO repeater that loses a stream
+  generates a terminator toward its peers — so the adapter is behaving
+  as the mesh member it is (D-18), not inventing material (D-14). A
+  repeater without a terminator times out on its own; it does not stay
+  keyed.
 - An empty playout slot is filled with **comfort silence**
   (`tr->ambe_silence`), because IPSC's wire cannot express "nothing" at a
-  scheduled instant — the choice is silence or a timing lie. The
+  scheduled instant — the choice is silence or a timing lie (D-15). The
   synthesis count is logged and evented, so nothing is hidden.
 
 Neither ever enters the core; both are IPSC wire machinery.

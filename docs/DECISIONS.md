@@ -297,11 +297,19 @@ Forward what was received; rebuild nothing.
 Routing rewrites addresses everywhere they appear (TGID, slot, LC
 destination) and leaves structure and timing untouched.
 
-**One carve-out: the IPSC egress wire.** IPSC has no representation for
-"nothing", and a MOTOTRBO repeater left without a terminator stays keyed,
-so `ipsc2hbpc` closes a drained stream with one (`translate.c`,
-`on_stream_timeout` → `emit_term`). That is protocol machinery on one
-wire: it never becomes a routed packet and never re-enters the core. No
+**One carve-out: the IPSC egress wire.** `ipsc2hbpc` closes a drained or
+vanished stream with a terminator (`translate.c`, `on_stream_timeout` →
+`emit_term`), and that is retained because **it is what an IPSC peer
+does**: a MOTOTRBO repeater that loses a stream generates a terminator
+toward its own IPSC peers. Emitting one is conforming to the mesh's
+behaviour, not inventing material — and the IPSC adapter *is* a peer in
+that mesh (D-18).
+
+(A repeater left without a terminator times out on its own; it does not
+stay keyed. The reason for this behaviour is protocol convention, not a
+stuck transmitter.)
+
+It stays on the wire: never a routed packet, never back into the core. No
 other adapter emits a terminator it did not receive.
 
 ## D-15 — No pacing, no loss concealment; the IPSC egress clock is the
