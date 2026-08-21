@@ -185,9 +185,10 @@ In reading order:
 5. [`docs/ADAPTERS.md`](docs/ADAPTERS.md) — per-protocol adapter specifications
 6. [`docs/EVENTS.md`](docs/EVENTS.md) — event bus, control socket, logging, dashboard
 7. [`docs/STYLE.md`](docs/STYLE.md) — implementation conventions (binding)
-8. [`docs/DECISIONS.md`](docs/DECISIONS.md) — design rationale, numbered anchors
-9. [`PLAN.md`](PLAN.md) — phased build plan with acceptance gates
-10. [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) — where implementation met the docs and something gave
+8. [`docs/IPSC-CAPABILITIES.md`](docs/IPSC-CAPABILITIES.md) — IPSC capability flags (reference; skippable)
+9. [`docs/DECISIONS.md`](docs/DECISIONS.md) — design rationale, numbered anchors
+10. [`PLAN.md`](PLAN.md) — phased build plan with acceptance gates
+11. [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) — where implementation met the docs and something gave
 
 Questions and, once code exists, (genuine) bug reports are welcome. The decision records document 
 why things are the way they are — including the things that were tried on paper and rejected. 

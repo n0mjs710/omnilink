@@ -156,39 +156,13 @@ peer_ip_acl  = []             # optional source-address restriction;
 
 egress_clock = true           # position-preserving playout (D-15)
 ts_prefer_call_info = false   # DMRlink confbridge workaround -- see
-                              # ADAPTERS §5.3
+                              # ADAPTERS §5.4
 
-# Capability advertisement -- what we tell IPSC peers we can do, sent at
-# registration and in keepalives. Flat keys, not a sub-table, so they
-# cannot drift onto the wrong system (§2.4). Defaults are values proven
-# against real hardware; changing them without a wire capture confuses
-# repeaters. Full meaning and bit positions in ADAPTERS §5.1.
-cap_safe_defaults = true      # true ignores every cap_* below
-
-# MODE byte
-cap_peer_oper   = true
-cap_radio_mode  = "DIGITAL"   # NO_RADIO | ANALOG | DIGITAL | MIXED
-cap_ts1_linked  = true
-cap_ts2_linked  = true
-
-# Service flags byte 3
-cap_csbk_call   = false       # control signalling
-cap_rcm         = false       # repeater call monitoring
-cap_con_app     = false       # 3rd-party console application
-
-# Service flags byte 4
-cap_xnl_call    = false       # XNL/XCMP connected
-cap_xnl_master  = false       # XNL master when xnl_call, else slave
-cap_data_call   = false
-cap_voice_call  = true
-
-# Service flags bytes 1-2. dmrlink3 leaves these zero; ipsc2hbpc exposes
-# them. Leave false unless you have a capture proving otherwise.
-cap_mnis         = false
-cap_ip_site_freq = false
-cap_slot1_phone  = false
-cap_slot2_phone  = false
-cap_virtual_peer = false      # software peer, not a physical repeater
+# Capability advertisement. Leave true and write nothing else; the
+# defaults are proven against real hardware. The full flag set exists
+# for the day a peer needs something different -- IPSC is reverse
+# engineered -- and is documented in docs/IPSC-CAPABILITIES.md.
+cap_safe_defaults = true
 
 # --- CC-CC conduit ---
 [[system]]

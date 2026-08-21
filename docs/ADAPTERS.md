@@ -428,9 +428,11 @@ so it is absent here in both directions (D-28).
 
 - **Reuse:** `ipsc2hbpc/src/ipsc.c` (auth/HMAC, registration, keepalive,
   burst parse — live-proven in production) is the engine. **dmrlink3 is
-  the semantic reference for IPSC generally** — Python, but the most
-  mature implementation in the family, and authoritative for master mode,
-  multi-peer bookkeeping, and the capability bit layout (§5.1).
+  the semantic reference** — Python, but the most mature and most
+  comprehensive IPSC implementation in the family: master mode,
+  multi-peer bookkeeping, and the capability bit layout. Read both,
+  since ipsc2hbpc carries later decoding dmrlink3 never received
+  (docs/IPSC-CAPABILITIES.md).
 - **Modes:** `peer` — join an existing mesh, the primary mode; `master` —
   bootstrap master, as dmrlink does.
 - **Ingress:** burst type → call boundaries; AMBE extracted as 3 × 49-bit
@@ -472,30 +474,18 @@ stanza stands alone.
 - **An IPSC system holds at most 15 peers including the master**, so no
   more than 14 can connect. That is a protocol limit, not a tunable, and
   it bounds what one IPSC system can be.
-- **Capabilities are advertised at registration and in keepalives**, and
-  they are per-system like everything else. dmrlink3 is the reference —
-  the most mature IPSC implementation in the family — and its
-  `const.py`/`config.py` carry the authoritative bit layout:
+- **Capabilities are advertised at registration and in keepalives**, per
+  system. `cap_safe_defaults = true` — the default — sends values proven
+  against real hardware and ignores every other `cap_*` key, so a normal
+  stanza carries one line.
 
-  | wire field | bits | keys |
-  |---|---|---|
-  | MODE byte | peer-operational, radio mode (`NO_RADIO`/`ANALOG`/`DIGITAL`), IPSC slot 1 and slot 2 on/off | `cap_peer_oper`, `cap_radio_mode`, `cap_ts1_linked`, `cap_ts2_linked` |
-  | service flags byte 3 | `CSBK 0x80`, `RPT_MON 0x40`, `CON_APP 0x20` | `cap_csbk_call`, `cap_rcm`, `cap_con_app` |
-  | service flags byte 4 | `XNL_STAT 0x80`, `XNL_MSTR 0x40`, `XNL_SLAVE 0x20`, `PKT_AUTH 0x10`, `DATA_CALL 0x08`, `VOICE_CALL 0x04`, `MSTR_PEER 0x01` | `cap_xnl_call`, `cap_xnl_master`, `cap_data_call`, `cap_voice_call` |
-  | service flags bytes 1–2 | MNIS, IP-site single frequency, per-slot phone patch, virtual peer | `cap_mnis`, `cap_ip_site_freq`, `cap_slot1_phone`, `cap_slot2_phone`, `cap_virtual_peer` |
-
-  **Two flags are derived, not configured.** `PKT_AUTH` follows
-  `auth_enabled`, and `MSTR_PEER` follows `mode` — accepting them as keys
-  would let a stanza contradict itself.
-
-  **XNL slave is not a key either**: dmrlink3 sets `XNL_SLAVE` when
-  `cap_xnl_call` is true and `cap_xnl_master` is false, so the pair
-  expresses all three states.
-
-  **dmrlink3 zeros service-flag bytes 1–2**; ipsc2hbpc exposes them. We
-  expose them and default them false — advertising a capability we do not
-  implement confuses repeaters, so changing one wants a wire capture and
-  a reason.
+  The full flag set is exposed anyway, because IPSC is reverse-engineered
+  and we do not know what we do not know: a future peer may need an
+  advertisement we do not currently send, and that should be a config
+  change rather than a patch. Keys, bit positions, the three derived
+  bits, and which implementation is authoritative for which bytes:
+  **docs/IPSC-CAPABILITIES.md**. No deployment is yet known to need any
+  of it.
 
 ### 5.2 The egress clock — the system's sole pacing exception (D-15)
 
