@@ -129,7 +129,9 @@ bind = "0.0.0.0:62035"
 target = "1.2.3.4:62035"
 network_id = 3129100
 passphrase = "password"
-both_slots = true
+both_slots = false            # true ONLY when the far end is OmniLink
+                              # or HBlink. Everything implementing the
+                              # OBP spec requires slot 1 (§4).
 preserve_source_peer = false
 
 # --- IPSC ---
@@ -285,17 +287,28 @@ operator has to get right by rote.
 | protocol | `slot` | `tgid` | triggers |
 |---|---|---|---|
 | `hbp`, `ipsc` | **required** | **required** | allowed |
-| `obp` | optional, defaults to 1 | **required** — it *is* the route | **error** |
+| `obp` | **error** — injected as 1, unless the system sets `both_slots` | **required** — it *is* the route | **error** |
 | `cc` | **error** — injected | **required** — the conduit's local TGID | **error** |
 | `xlx` | **error** — injected as 2 | **error** — injected as 9 | **error** |
 
-Injected versus exposed is about observability, not taste (D-07). XLX's
-TS2/TG9 is a protocol constant whose wrong value is *silently* fatal — no
-acknowledgement exists and nothing on the wire carries module identity, so
-mis-addressed traffic vanishes without symptom. CC's local TGID is the
-opposite: a wrong value shows up immediately as traffic under a
-consistent but unexpected talkgroup, and the CC-CC specification expects
-each end to configure it independently.
+Injected versus exposed is about observability, not taste (D-07). A value
+whose wrong setting fails silently is injected; a value whose wrong
+setting is visible is exposed.
+
+- **XLX TS2/TG9** — injected. No acknowledgement exists and nothing on
+  the wire carries module identity, so mis-addressed traffic vanishes
+  without symptom.
+- **OBP slot** — injected as 1. **The OpenBridge specification puts all
+  traffic on slot 1**, and BrandMeister, DMR+, IPSC2, TGIF, FreeDMR and
+  anything else implementing it to spec will discard a call that arrives
+  on slot 2. The only reason an override exists at all is that both ends
+  of an OmniLink↔OmniLink or OmniLink↔HBlink link are ours, so setting
+  `both_slots = true` on that system declares it and makes `slot`
+  meaningful on its members. Without that flag, `slot` is a config
+  error — not a default to be overridden.
+- **CC-CC local TGID** — exposed. A wrong value shows up immediately as
+  traffic under a consistent but unexpected talkgroup, and the
+  specification expects each end to configure it independently.
 
 Optional dynamic-rule fields (ROUTING §4; omit them and the member is
 simply always active):
@@ -382,6 +395,9 @@ around rather than solved it. Specific messages the docs require:
   letter that number would correspond to.
 - A login self-description key (§2.3) on a system that never logs in,
   naming the key and saying which modes send an RPTC record.
+- `slot` on an OBP member whose system does not set `both_slots`, saying
+  that OpenBridge carries slot 1 only and that the override exists solely
+  for links where both ends are ours.
 - A malformed ACL string, quoting the fragment that failed and restating
   that one ACL carries exactly one action.
 - A `tgid_ts*_acl` on a non-HBP system, saying that TGID ACLs limit
@@ -471,10 +487,13 @@ existing file and emits `rules.toml`:
 - `BRIDGES` members map field-for-field: `SYSTEM`/`TS`/`TGID` →
   `system`/`slot`/`tgid`, and `ACTIVE`/`TO_TYPE`/`TIMEOUT`/`ON`/`OFF`/
   `RESET` keep both their names and their units.
-- `OBP_BRIDGES` rows become ordinary members with the mapped TGID, and
-  the `(TGID, TS)` override form becomes an explicit `slot`. hblink3
-  already expands these into synthetic bridge members internally, so this
-  is a change of notation, not of meaning.
+- `OBP_BRIDGES` rows become ordinary members with the mapped TGID.
+  hblink3 already expands these into synthetic bridge members internally,
+  so this is a change of notation, not of meaning. Its `(TGID, TS)`
+  override form becomes an explicit `slot`, which the converter emits
+  **only** if that system has `BOTH_SLOTS` set; otherwise the override
+  was already inert and carrying it across would produce a config the
+  validator rejects.
 - `XLX_BRIDGES` rows become bare `{ system = "..." }` members.
   Neither table has trigger fields to carry — hblink3 hard-wires both
   inert — so bound-endpoint members convert with no dynamic layer, which

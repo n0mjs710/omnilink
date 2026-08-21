@@ -150,14 +150,22 @@ special-casing lives in the validator, where it can produce a specific
 message with a remedy, rather than in the grammar, where it becomes
 boilerplate.
 
-**Injected versus exposed is about observability.** XLX's TS2/TG9 is a
-protocol constant whose wrong value is *silently* fatal — no
-acknowledgement exists and no packet carries module identity, so
-mis-addressed traffic vanishes without symptom. So it is injected, and
-supplying it is an error. CC's local TGID is the opposite: a wrong value
-shows up immediately as traffic under an unexpected talkgroup, and the
-CC-CC specification expects each end to configure it independently. So it
-is exposed.
+**Injected versus exposed is about observability.** A value whose wrong
+setting fails silently is injected and supplying it is an error; a value
+whose wrong setting is visible is exposed.
+
+- **XLX TS2/TG9** — injected. No acknowledgement exists and no packet
+  carries module identity, so mis-addressed traffic vanishes without
+  symptom.
+- **OBP slot 1** — injected. It is the OpenBridge specification, and
+  BrandMeister, DMR+, IPSC2, TGIF, FreeDMR and anything else conforming
+  will discard a call on slot 2. The `both_slots` override exists only
+  because both ends of an OmniLink↔OmniLink or OmniLink↔HBlink link are
+  ours (D-06); without that flag, `slot` on an OBP member is a config
+  error rather than a default to override.
+- **CC-CC local TGID** — exposed. A wrong value appears immediately as
+  traffic under an unexpected talkgroup, and the specification expects
+  each end to configure it independently.
 
 **XLX and CC-CC join exactly one bridge**, enforced at rules load. Two
 failures follow otherwise, and the second is load-bearing:

@@ -280,14 +280,23 @@ The trunk (D-06), and the HBlink4 interconnect (D-03).
   OmniLink↔OmniLink link are ours, so extensions are available there and
   nowhere else.
 - **Ingress:** HMAC verify, then hand the packet over — OBP carries
-  DMRD, so there is nothing to convert. Slot comes from the wire (1 by
-  OBP convention; the real slot when `both_slots` is set). Many
-  concurrent streams from a per-peer pool, keyed on the wire `stream_id`
-  (FRAME §3). **Per-stream dedupe** of retransmit and reflection cases —
-  the cheapest and most effective loop control in the system
-  (ROUTING §8).
-- **Egress:** wire slot fixed at 1 per OBP convention, no arbitration
-  (trunk semantics), no pacing, one wire `stream_id` per core stream.
+  DMRD, so there is nothing to convert. Many concurrent streams from a
+  per-peer pool, keyed on the wire `stream_id` (FRAME §3).
+  **Per-stream dedupe** of retransmit and reflection cases — the cheapest
+  and most effective loop control in the system (ROUTING §8).
+- **Slot 1 is the specification, and non-conforming traffic is
+  discarded.** A call arriving on slot 2 is dropped with an event unless
+  the system sets `both_slots`. hblink3 does exactly this and says why in
+  the code: *"all calls must be on Slot 1 for Brandmeister or DMR+. Other
+  HBlinks can process timeslot on OPB if the flag is set."* Unit calls
+  are exempt from the check, as they are there.
+- **`both_slots` is a claim about the far end**, not a preference. Set it
+  only when that end is an OmniLink or an HBlink — both ends being ours
+  is the entire reason the extension is available (D-06). Against
+  BrandMeister, DMR+, IPSC2, TGIF, FreeDMR, or anything else conforming,
+  it makes traffic disappear.
+- **Egress:** wire slot 1 unless `both_slots`, no arbitration (trunk
+  semantics), no pacing.
 - **Bridge mapping is ordinary membership.** An OBP system's permitted
   TGIDs are exactly the TGIDs it holds bridge memberships for — one
   config concept instead of two. hblink3 expands its `OBP_BRIDGES` rows
