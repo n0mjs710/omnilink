@@ -129,6 +129,12 @@ path is two loads and a compare. On change, allocate a tag.
 the precomputed LCs for the target's TGID (§4.1) and whether the stream
 is headerless.
 
+**The two maps are per-direction and stay that way.** Ingress is keyed on
+protocol identity, egress on tag; they serve different purposes and share
+no namespace. Merging them would be a false economy — it would put
+inbound and outbound wire IDs in one space and create the only collision
+this design does not otherwise have.
+
 **The wire `stream_id` and repeater ID pass through unchanged** on HBP,
 OBP, and XLX; hblink3 does the same (`bridge.py` copies `_data[11:15]`
 and `_data[16:20]` verbatim). Only IPSC and CC-CC mint an identifier,
@@ -140,10 +146,12 @@ There is no reason to re-mint on HBP or XLX: slot arbitration
 (ROUTING §5.2) allows one outbound stream per `(system, slot)` at a time,
 so two streams sharing an ID can never be concurrent there. **OBP is the
 one place they could be**, since it trunks concurrent streams with no
-arbitration — but a single link carries a handful of streams against the
-core's two hundred, so the exposure is orders of magnitude below the
-collision the tag exists to prevent, and hblink3 has run this way
-indefinitely. Accepted; traceability is worth more.
+arbitration — but the exposure there is small twice over. A single link
+carries a handful of streams against the core's two hundred, and the two
+directions are tracked separately (§3.1), so an inbound ID and an
+outbound ID never collide with each other; only same-direction pairs
+count, which halves it again. hblink3 has run this way indefinitely.
+Accepted; traceability is worth more.
 
 Both maps expire on call end or their own inactivity timer.
 
