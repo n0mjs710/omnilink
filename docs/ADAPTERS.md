@@ -297,10 +297,9 @@ The trunk (D-06), and the HBlink4 interconnect (D-03).
   The reference implementation does not validate the field —
   authentication is the HMAC plus the source socket — so both are safe;
   it is per-system config because it is only *useful* when the far end
-  preserves it too. This was added after it was discovered that while
-  Brandmeister published the requirement subsequent to work with IPSC2,
-  they do not bother to check/enforce the requirement, which allow us
-  to pass the original source-peer as well.
+  preserves it too. BrandMeister published the requirement after the
+  IPSC2 work but does not enforce it, which is what makes passing the
+  original source peer possible.
 
 ---
 
@@ -355,21 +354,19 @@ sent to frame the call correctly.
 Build the LC from the same src/dst as the DMRD header
 (FRAME §4 rule 1). xlxd reads the destination from header bytes 8–10
 and never decodes the LC — its BPTC decode is commented out at
-`:657-660` — so a contradictory LC *would* work, but is could be changed
-in the future. It costs little to generate a proper LC, so we will
-include that behavior here as a hedge against the future.
+`:657-660` — so a contradictory LC *would* work today, but that could
+change. It costs little to generate a proper LC, so we do, as a hedge.
 
-**This is a control protocol, not stream frame synthesis.** The link
-commands never become a routed stream and never enters the core; the 
-adapter emits it directly to the socket, exactly like a login or a 
-keepalive.
+**This is a control protocol, not stream synthesis.** The link commands
+never become a routed stream and never enter the core; the adapter emits
+them directly to the socket, exactly like a login or a keepalive.
 
-**Never lift a canned payload blob** from prior art. The link burst's LC
-is built from this system's own radio ID and the target module TGID every
-time; its structure comes from `dmr/`'s fixed CC-1 tables.
+**Never lift a canned payload blob** from prior art. The LC is built from
+this system's own radio ID and the target module TGID every time.
 
-**Do not port hblink3's `xlx_slot_type()`.** The link burst is built at
-colour code 1 from `dmr/`'s precomputed tables (D-28).
+The colour code here is arbitrary — it has no meaning outside a
+repeater's air interface (D-28) — so use 1 and `dmr/`'s precomputed
+tables. hblink3's `xlx_slot_type()` is not ported.
 
 ### 4.2 Binding and config
 
