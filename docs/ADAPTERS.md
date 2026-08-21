@@ -262,7 +262,9 @@ Dashboard color only; no behavior attaches (D-03).
 
 One HBP system with no bridge members *is* a small standalone server:
 local repeat plus subscriptions is most of what a small network needs, at
-zero additional code. A supported deployment shape, not a feature.
+zero additional code. A supported deployment shape, though if there are no
+other systems or routing, or only limited OBP connections, HBlink4 is a
+better option.
 
 ---
 
