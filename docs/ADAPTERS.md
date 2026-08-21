@@ -29,13 +29,17 @@ typedef struct {
     /* Open sockets, register fds/timers on the shared loop. */
     void *(*init)(const nx_system_cfg *cfg, ev_loop *loop, uint16_t sys_idx);
     /* Core hands an egress frame for this system. Synchronous. */
-    void  (*egress)(void *inst, const nx_frame *f, const nx_egress_target *t);
+    void  (*egress)(void *inst, uint32_t tag,
+                    const uint8_t *dmrd, int len,
+                    const nx_egress_target *t);
     /* Protocol goodbyes on daemon shutdown. */
     void  (*shutdown)(void *inst);
 } nx_adapter_ops;
 
 /* The whole core-facing API adapters may call: */
-void nx_core_ingress(const nx_frame *f);
+void     nx_core_ingress(uint16_t sys, uint32_t tag,
+                         const uint8_t *dmrd, int len);
+uint32_t nx_stream_tag_next(void);            /* FRAME §3.1 */
 void nx_core_system_state(uint16_t sys, uint32_t endpoint, bool up);
 void nx_event_emit(/* subsys, sys, ev, lvl, fields... */);
 bool nx_acl_check_reg(uint16_t sys, uint32_t endpoint_id); /* §1.3 */
@@ -48,9 +52,10 @@ rings, no handoffs (ARCHITECTURE §2).
 adapter must not carry a private replica of bridge membership: rule
 distribution to the edge is policy at the edge, which D-21 forbids. It
 also would not work — unit calls route from the core's cache, which no
-adapter can see, and `origin_slot` is deliberately never copied to egress
-(FRAME §1.1), so without this parameter there is no channel by which the
-core could name an endpoint or a slot. One struct closes both holes and
+adapter can see, and the origin's slot is never carried through to egress
+(the egress adapter rewrites the timeslot in the `bits` byte to the
+target member's slot, FRAME §1.1), so without this parameter there is no
+channel by which the core could name an endpoint or a slot. One struct closes both holes and
 keeps every routing decision in the core.
 
 **Each system is a fully isolated instance.** The adapter *type* is
@@ -64,38 +69,39 @@ semantics lie.
 ### 1.1 Universal ingress duties (wire → core)
 
 - All protocol machinery: auth, registration, keepalives, endpoint state.
-- Present voice as the 33-byte DMR burst (FRAME §4.1); assign
-  `stream_tag`; stamp `origin_system`, `origin_endpoint`, and
-  `origin_slot`.
-  For burst-native protocols (HBP, OBP, XLX) this is a copy.
+- **Present a well-formed DMRD packet** and allocate its stream tag
+  (FRAME §3.1). For HBP, OBP, and XLX the packet is what arrived — hand
+  the pointer over.
 
   **IPSC re-packs; CC-CC synthesizes. They are not the same case.** IPSC
   carries the same DMR protocol elements HBP does — voice headers and
   terminators, a DMR LC, embedded LC, superframe position, timeslot —
   arranged differently and without the over-the-air FEC and interleave.
   Its LC is lifted from IPSC's own LC, never invented, and only the
-  structural wrapping is assembled.
+  structural wrapping is assembled. `ipsc2hbpc` already composes exactly
+  this packet today.
 
   **CC-CC is the only adapter without burst and superframe data on its
   wire** — three 49-bit AMBE frames, RTP, and B-on/B-off, and nothing
-  else (FRAME §4.1). It is therefore the only adapter that invents
+  else (FRAME §4). It is therefore the only adapter that invents
   structure, and the only one running its own A–F position counter (§6).
 
-  In every case the LC must agree with the frame header, and anything
+  In every case the LC must agree with the DMRD header, and anything
   actually built comes from `dmr/`'s tables (D-28) — never from a
   captured constant.
-- **Stamp `origin_slot` always**, including on unslotted transports,
-  using the nominal slot D-07 assigns. It is part of the routing key now
-  (D-04); a frame carrying 0 cannot be routed.
-- **Assign `vseq` exactly once, here.** Read it from wire superframe
-  position where the protocol has one; an adapter that constructs bursts
-  already knows the position because it had to choose sync-at-A versus
-  EMB-at-B–F to build the burst at all, and must record what it chose.
-  `vseq = 7` is for structureless origins only and is close to
-  unreachable in practice (FRAME §1.1).
+- **The `bits` byte must be right, including on unslotted transports.**
+  Slot is part of the routing key (D-04), so OBP, CC-CC, and XLX stamp
+  the nominal slot D-07 assigns them. Frame type and dtype/vseq must
+  reflect what the burst actually is: an adapter that *constructs* a
+  burst already chose sync-at-A versus EMB-at-B–F to build it at all, so
+  it knows the position and must record it. DMRD has no encoding for
+  "position unknown", and inventing one by miscounting hands the far
+  egress a fragment/position mismatch that only an audio decode would
+  catch.
 - **Preserve call structure** (D-14). Real headers and terminators cross
-  as real CALL_START and CALL_END; nothing is synthesized; a headerless
-  late-entry stream begins with VOICE and stays headerless end to end.
+  as real headers and terminators; nothing is synthesized; a headerless
+  late-entry stream begins with voice bursts and stays headerless end to
+  end.
   **No timeout terminators ever enter the core** — when a stream stops,
   the core emits the event and everyone's state expires on its own
   timers.
@@ -147,7 +153,7 @@ Split by what the core can see (D-21):
 
 - Emit the payload burst in the protocol's framing. Burst-native adapters
   write it out and re-touch it only where routing requires it (retarget
-  LC splice, FRAME §4.1.1, via `dmrlc.c`). Bare-AMBE adapters reduce it
+  LC splice, FRAME §4.1, via `dmrlc.c`). Bare-AMBE adapters reduce it
   (`dmr_ambe_72_to_49` ×3) and wrap it in their own framing. Protocol
   packet wrap and protocol stream IDs in both cases.
 - Slotted protocols call **`channel.c`** for per-`(system, slot)`
@@ -155,10 +161,11 @@ Split by what the core can see (D-21):
   (ROUTING §5.2), with local-repeat traffic in the same arbitration
   state. This module is shared precisely because it is the easiest thing
   in the project to get subtly different in two places.
-- Follow the frame's `vseq` faithfully; use a local A–F counter only on
-  `vseq = 7`. For a headerless stream, build a minimal LC from the
-  frame's src/dst and emit **no** wire header (FRAME §4.2).
-- **Event every drop** — `slot_busy`, `pfmt_unsupported`, `endpoint_down` —
+- **Preserve `dtype`/`vseq` from the incoming packet**; rewrite only the
+  timeslot in the `bits` byte (FRAME §1.1). For a headerless stream,
+  build a minimal LC from the packet's own src/dst and emit **no** wire
+  header (FRAME §3.1).
+- **Event every drop** — `slot_busy`, `payload_unsupported`, `endpoint_down` —
   so the log and dashboard can join the core's forwarded-to *intent* with
   the edge's *outcome* (D-17). Nothing is reported back to the core; it
   keeps forwarding, and that is fine.
@@ -200,15 +207,14 @@ list (§5.2). Both are correct; neither is the other.
 - **Reuse:** the login/auth state machine and DMRD codec conventions from
   hblink3's `hblink.py` and hblink4's `protocol.py` as semantic
   reference; the C peer-mode engine from `ipsc2hbpc/src/hbp.c`.
-- **Ingress (passthrough):** DMRD → frame with the 33-byte burst copied
-  verbatim. Classify voice sync/EMB to set `vseq`; BPTC-decode the VHEAD
-  LC → CALL_START; VTERM → CALL_END. **No AMBE conversion at all** — the
-  burst is already the core's representation. HBP `stream_id` →
-  `stream_tag` map, pooled per endpoint and slot.
+- **Ingress (pure passthrough):** the packet already carries everything,
+  including the `bits` byte, so ingress is a pointer hand-off plus the
+  stream-tag lookup (FRAME §3.1), pooled per client and slot. **No
+  decoding of any kind** — not the burst, not the LC.
 - **Egress (passthrough):** write the payload burst back out as DMRD,
   re-touched only where routing requires it — if the member's TGID
   differs from the frame's, splice the per-stream precomputed LCs
-  (FRAME §4.1.1). New HBP `stream_id` per stream, slot from the egress
+  (FRAME §4.1). New HBP `stream_id` per stream, slot from the egress
   target, arbitration via `channel.c`. No pacing: forward on arrival, as
   hblink3 and hblink4 always have.
 - **`origin_endpoint` handling.** On ingress it is the DMRD RptrId; on
@@ -259,8 +265,8 @@ The trunk (D-06), and the HBlink4 interconnect (D-03).
   nowhere else.
 - **Ingress:** HMAC verify, DMRD parse, burst copied verbatim — OBP
   carries HBP-style bursts, so this is a copy, not a conversion. Stamp
-  `origin_slot` from the wire slot (1 by convention; the real slot when
-  `both_slots` is set). Many concurrent streams, from a per-peer stream
+  the `bits` byte's slot from the wire (1 by OBP convention; the real
+  slot when `both_slots` is set). Many concurrent streams, from a per-peer stream
   pool. **Per-stream dedupe** of retransmit and reflection cases, which
   is the cheapest and most effective loop control in the system
   (ROUTING §8).
@@ -336,7 +342,7 @@ and never decodes the LC — its BPTC decode is commented out at
 shipped: it is invisible to every test that does not decode audio.
 
 **This is protocol machinery, not frame synthesis.** The link never
-becomes an `nx_frame` and never enters the core; the adapter emits it
+becomes a routed stream and never enters the core; the adapter emits it
 directly to its socket, exactly like a login or a keepalive. The
 "nothing synthesizes frames" rule (D-14) is about fabricating call
 content into the routing path and is not weakened here.
@@ -412,8 +418,8 @@ directions, which is why D-28's fixed CC-1 tables cost nothing.
   49→72, BPTC, slot type, sync, EMB) per FRAME §4.1. **The LC comes from
   IPSC's own LC**, not from invented values, and must agree with the
   frame header. `vseq` comes from real superframe position — burst E is
-  explicitly identifiable (`GV_BE_FLAG`), so `vseq = 7` never applies
-  here. `origin_endpoint` from the IPSC RptrId field; per-network
+  explicitly identifiable (`GV_BE_FLAG`), so the `bits` byte's
+  dtype/vseq is always a real position. `origin_endpoint` from the IPSC RptrId field; per-network
   keepalive state → `nx_core_system_state` plus events.
 - **Egress:** unpack the burst back to AMBE and IPSC's own fields, slot
   from the egress target, IPSC sequence and RTP fields owned here — the
@@ -428,7 +434,7 @@ directions, which is why D-28's fixed CC-1 tables cost nothing.
   src/dst and a DMR LC, and a member with a different TGID needs both
   changed together. dmrlink3 does exactly this (`bridge.py`, "Rewrite
   DST GROUP + IPSC SRC in DMR LC"). This is why the IPSC loopback vector
-  asserts on the LC and not only on the AMBE bits (FRAME §7).
+  asserts on the LC and not only on the AMBE bits (FRAME §6).
 
 ### 5.1 The egress clock — the system's sole pacing exception (D-15)
 
@@ -454,7 +460,7 @@ D-15) and permitted **nowhere else in the system**:
   scheduled instant — the choice is silence or a timing lie. The
   synthesis count is logged and evented, so nothing is hidden.
 
-Neither ever becomes an `nx_frame` and neither re-enters the core.
+Neither ever enters the core; both are IPSC wire machinery.
 
 ### 5.2 No local repeat — IPSC is peer-to-peer (D-18)
 
@@ -509,18 +515,18 @@ until this adapter passes its live gate (D-24). Never double-bind UDP
   has no analogue and is not ported.
 - **No unit calls.** The specification puts private calls out of scope
   entirely, so rules load rejects a CC system as a unit-call target and
-  the core never routes `NXF_UNIT` to one.
-- **Ingress:** B-on → CALL_START — a B-on is a *real* call-start signal,
-  so the 9-byte LC (`pfmt 1`) is constructed from its metadata, which is
-  translation of a real event rather than synthesis. Media → AMBE
+  the core never routes a unit call to one.
+- **Ingress:** B-on → a real voice-header packet. A B-on *is* a genuine
+  call-start signal, so building the header from its metadata is
+  translation of a real event, not synthesis. Media → AMBE
   triplets built up into bursts per FRAME §4.1, with the LC agreeing with
   the frame header and structure from `dmr/`'s fixed CC-1 tables (D-28).
-  B-off → CALL_END.
+  B-off → a terminator packet.
 
-  **Assign a real `vseq`.** The adapter is choosing sync-at-A versus
+  **Stamp a real position.** The adapter chooses sync-at-A versus
   EMB-fragment-at-B–F in order to construct each burst, so it knows the
-  position: run a per-stream A–F counter from the B-on and stamp what it
-  built. `vseq = 7` here would hand the far egress a fragment/position
+  position: run a per-stream A–F counter from the B-on and record it in
+  the `bits` byte. Miscounting hands the far egress a fragment/position
   mismatch that only an audio decode would catch (FRAME §1.1).
 - **Egress:** reduce the payload burst back to AMBE triplets, then
   B-on / media / B-off synthesis, immediate forward — matching cc2obp's
@@ -534,7 +540,7 @@ working translation is already in `cc2obp/cccc/cccc_ambe.c` and CC audio
 is clean today.
 
 **Port that code verbatim** and lock it in with conformance vectors
-(FRAME §7) — CC↔burst vectors validated against known-good HBP vectors
+(FRAME §6) — CC↔burst vectors validated against known-good HBP vectors
 of the same audio — so the hard-won fix can never silently regress.
 
 `cc2obp/translate.c` already implements this exact boundary

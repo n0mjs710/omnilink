@@ -45,10 +45,11 @@ and quoting it invites a performance argument nobody needs to have.
   unchanged): every socket non-blocking with a read callback, every timer
   a loop timer. This is exactly the proven ipsc2hbpc/cc2obp shape, scaled
   to more sockets.
-- Modules interact by **direct function call**, with `const nx_frame *`
-  as the only currency across the adapter/core boundary:
-  - adapter ingress → `nx_core_ingress(const nx_frame *f)`
-  - core egress → `ops->egress(inst, const nx_frame *f, const nx_egress_target *t)`
+- Modules interact by **direct function call**. The currency across the
+  adapter/core boundary is the DMRD packet itself, `const`, plus the
+  system index and stream tag alongside it (D-05, FRAME.md):
+  - adapter ingress → `nx_core_ingress(sys, tag, dmrd, len)`
+  - core egress → `ops->egress(inst, tag, dmrd, len, target)`
   - anyone → `nx_event_emit(...)`; adapters → `nx_core_system_state(...)`
 - The hot path is one synchronous chain with **no queues and no locks**:
   `recvfrom → parse → acl → nx_core_ingress → bridge lookup → arbitrate
@@ -148,13 +149,15 @@ their genuinely protocol-specific parts, which was the point.
   allocation sites carry a comment saying which rule they are under, so
   the distinction is not "cleaned up" by someone reading only the
   headline.
-- Frames move **by `const` pointer** through the synchronous chain. The
-  one component that retains a frame past the call delivering it is the
-  IPSC playout buffer, and it copies. Bounded, sized at init.
-- The core makes **one stack copy per egress member**, because it
-  rewrites `dst_id` to that member's TGID from a single `const` source
-  frame. "No copies" means no heap traffic and no queues, not literally
-  zero — one 64-byte copy per delivery is the cost of routing.
+- Packets move **by `const` pointer** through the synchronous chain. The
+  one component that retains one past the call delivering it is the IPSC
+  playout buffer, and it copies. Bounded, sized at init.
+- **The core copies nothing.** It never modifies a packet: it passes a
+  `const` pointer plus delivery parameters, and the egress adapter makes
+  the one copy it was always going to make — to write its own stream ID
+  and repeater ID — rewriting the destination in the header and in the
+  LC in the same pass (FRAME.md §4.1). One copy per delivery, in the
+  place that has to touch the bytes anyway.
 - Fixed-capacity pools use freelists with plain indices. Single thread
   means single owner for everything; there are no exceptions to reason
   about.
@@ -191,7 +194,7 @@ omnilink/
 ├── rules.toml.sample
 ├── src/
 │   ├── main.c                # config, module init, signals, ev_run
-│   ├── frame.h               # nx_frame — normative, see FRAME.md
+│   ├── dmrd.h                # DMRD accessors + bits byte, see FRAME.md
 │   ├── config.c/.h           # TOML → immutable system table
 │   ├── rules.c/.h            # TOML → generation-tracked rules arena
 │   ├── validate.c/.h         # the one validator (CONFIG §6.1)
@@ -223,7 +226,7 @@ modules.
 
 | | evidence | estimate |
 |---|---|---|
-| core (`core`,`route`,`rules`,`config`,`validate`,`frame`,`main`) | `bridge.py` is 1,205 dense lines and the validator has no C ancestor | **3.2–4.0 k** |
+| core (`core`,`route`,`rules`,`config`,`validate`,`dmrd`,`main`) | `bridge.py` is 1,205 dense lines and the validator has no C ancestor | **3.0–3.8 k** |
 | `acl` | hblink3's ACL parse + four-layer enforcement, plus range grammar | **0.3–0.45 k** |
 | `channel` + `dmrlc` | factored out of what would otherwise be duplicated | **0.4–0.6 k** |
 | `event` (bus, log, bidirectional control socket, snapshot serializer) | no ancestor for the snapshot serializer or the command side | **0.6–0.9 k** |

@@ -22,15 +22,15 @@ implementers**. When in doubt, open `ipsc2hbpc/src/` and match it.
   saying what the module is and where it came from (see any existing file).
 - Opaque structs (`typedef struct foo foo;` in header, definition in .c)
   for anything with behavior; plain visible structs for pure data
-  (`nx_frame`).
+  (`nx_egress_target`).
 - Module-prefixed snake_case: `nx_core_ingress`, `hbp_handle_dmrd`. Constants
   UPPER_SNAKE in `*_const.h` where the list is long (house pattern).
 - **The `nx_` prefix is reserved for the adapter/core boundary contract**
-  (from "nexus" — the meeting point): the frame and its
-  constants (`nx_frame`, `NX_VER`, `NXF_*`), the core API adapters call
-  (`nx_core_*`, `nx_event_emit`), and the adapter contract types
-  (`nx_adapter_ops`, `nx_system_cfg`) — i.e., everything declared in
-  `frame.h` and `adapter.h`, and nothing else. Seeing `nx_` means
+  (from "nexus" — the meeting point): the core API adapters call
+  (`nx_core_*`, `nx_event_emit`, `nx_acl_check_reg`,
+  `nx_stream_tag_next`) and the contract types (`nx_adapter_ops`,
+  `nx_egress_target`, `nx_system_cfg`) — i.e., everything declared in
+  `adapter.h`, and nothing else. DMRD accessors are `dmrd_*`. Seeing `nx_` means
   "core data or the contract that carries it across the boundary."
   Module internals — including the core's own — use their module prefix
   (`route_`, `event_`, `hbp_`, ...), never `nx_`.
@@ -74,14 +74,14 @@ obvious, no changelog comments.
 
 - `tests/` mirrors the ipsc2hbpc/cc2obp harness style: small C test
   binaries + shell/Python drivers, run by `make test`, no framework deps.
-- Unit level: frame pack/unpack (incl. the packed-field accessor macros),
+- Unit level: DMRD field and `bits`-byte accessors, stream-tag maps,
   bridge-table lookup and fan-out, arbitration/hang state machine, the
   dynamic-rule engine, ACL grammar and layering, config parse (valid +
   a rejection suite).
 - **Rejection tests assert on the message, not just the failure.** A
   validator that rejects the right file with the wrong explanation has
   failed its actual job (CONFIG.md §6.1).
-- Adapter level: golden conformance vectors per FRAME.md §7 — an adapter
+- Adapter level: golden conformance vectors per FRAME.md §6 — an adapter
   PR without vectors is incomplete by definition.
 - System level: `tests/replay/` Python harness feeding captured wire
   packets straight into one adapter's ingress and asserting what comes out

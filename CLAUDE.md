@@ -4,6 +4,13 @@ One single-threaded C11 daemon: **HBlink3's routing semantics, in C, with
 IPSC, CC-CC, OpenBridge, and XLX plugged into the same core.** Read
 README.md first, then the doc for your task.
 
+**What crosses the adapter/core boundary is the DMRD packet itself**, plus
+a system index and a core-assigned stream tag as arguments (D-05,
+FRAME.md). There is no internal frame struct. The core reads the DMRD
+header and the `bits` byte and treats the burst as opaque; it is
+deliberately not protocol-agnostic, because OmniLink is DMR only and
+DMRD is what the network actually runs.
+
 **The design corpus was rebuilt from zero on 2026-08-21.** Everything
 predating that commit is withdrawn. If you find a document, comment, or
 issue describing a representation-neutral core, TGID-only routing, a
@@ -67,7 +74,7 @@ Check here before "fixing" one of these:
 ## Definition of done
 
 - `make` warning-clean (`-Wall -Wextra -Werror`), `make test` green.
-- Adapter work additionally requires conformance vectors per FRAME.md §7
+- Adapter work additionally requires conformance vectors per FRAME.md §6
   — ingress, egress, loopback identity. **No vectors, not done** (D-11).
 - Validator work requires rejection tests that assert on the *message*,
   not just the failure (CONFIG §6.1).

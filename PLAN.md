@@ -35,8 +35,9 @@ because they are what changed:
 
 ## Phase 1 — Core (the biggest single phase)
 
-- **`frame.h`** — layout plus packed-field accessor macros, unit-tested
-  byte-exact against FRAME §1.
+- **`dmrd.h`** — DMRD field and `bits`-byte accessors (explicit
+  shift/mask, no bitfields), unit-tested against FRAME §1, plus the
+  stream-tag allocator and the ingress/egress map helpers (FRAME §3.1).
 - **`config.c`** — `omnilink.toml` → the immutable system table;
   hostname resolution at startup (D-22).
 - **`rules.c` + `validate.c`** — `rules.toml` → a generation-tracked

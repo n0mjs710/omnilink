@@ -33,7 +33,7 @@ from it, the departure is called out explicitly and marked
   `(system, slot, tgid)` plus its dynamic-rule state. Members live in
   the reloadable rules table (D-09).
 - **Stream** — one transmission, keyed `(origin_system, stream_tag)`,
-  bounded by CALL_START … CALL_END or by timeout.
+  bounded by a voice header … terminator, or by timeout.
 - **Endpoint** — a device below a system: a client (repeater or hotspot)
   on an HBP server, a peer on an IPSC network. The neutral cross-protocol
   term; each protocol's own term is used when speaking about that
@@ -138,7 +138,7 @@ rules_generation, state
 ```
 
 - **Stream open — any traffic frame** with an unknown key opens a
-  stream. A real CALL_START when the origin delivered a header; a bare
+  stream. A real voice header when the origin delivered one; a bare
   VOICE frame on late entry, in which case the stream is headerless and
   flows headerless end to end (D-14). The precomputed LC is built here,
   once, and reused for every retarget (§7).
@@ -150,9 +150,9 @@ rules_generation, state
   CONTENDED stream are dropped silently. One log line per lost call, not
   fifty.
 - **Traffic on an ACTIVE stream** — VOICE, plus unknown in-stream types
-  per FRAME.md §6 — updates `t_last_frame` and forwards to the held
+  per FRAME.md §2 — updates `t_last_frame` and forwards to the held
   bridges' members.
-- **CALL_END**, real terminator only: forward, fire deactivation triggers
+- **A real terminator**: forward, fire deactivation triggers
   (§4), release every held bridge, emit `call_end` with duration, frame
   counts, and reason, free the slot.
 - **Timeout.** The core scans the pool on a 500 ms timer;
@@ -195,7 +195,7 @@ D-13 says to intervene.
 
 So: **a stream's delivery set never shrinks during its lifetime.**
 
-Ordering, on CALL_START: fire activation triggers (§4.2) **first**, then
+Ordering, at call start: fire activation triggers (§4.2) **first**, then
 resolve the delivery set — so the transmission that brings a member in is
 itself delivered to it.
 
@@ -248,7 +248,7 @@ still works and is still operator-controllable (§4.5).
 
 ### 4.1 Trigger timing is asymmetric, and deliberately so
 
-**Activation triggers fire on CALL_START, so that the operator's
+**Activation triggers fire at call start, so that the operator's
 identification is not truncated.**
 
 The common configuration has the trigger TGID equal to the member's
@@ -289,7 +289,7 @@ they hear nothing, assume the bridge is idle, and are dropped again
 (§3.1). Skipping trigger processing for a dropped stream is a plausible
 "optimization" and it breaks exactly this.
 
-### 4.2 On CALL_START, for each member of the origin system
+### 4.2 At call start, for each member of the origin system
 
 Matching requires `slot == member.slot`. For each member where
 `dst_id ∈ member.on ∪ member.reset`:
@@ -368,10 +368,10 @@ two sources on one bridge interleave into one conference.
   matching several bridges (D-04) takes what it can get and forwards to
   the bridges it holds; bridges it was refused are noted in the
   `stream_contention` event.
-- **Release** on CALL_END or timeout, immediately and unconditionally.
+- **Release** at call end or timeout, immediately and unconditionally.
 - **No queueing.** DMR has no floor control. A refused stream is reported
   and discarded, and if the holder ends mid-contender the contender stays
-  lost — its CALL_START has already passed and streams are never spliced
+  lost — its call start has already passed and streams are never spliced
   mid-call. Both ancestors behave this way.
 - **No hang time on a bridge, ever.** The full reasoning is in D-16 and
   it is not a nuance: a per-bridge hang timer would refuse *every*
@@ -428,7 +428,7 @@ core-wide (D-26).
 src_id -> { system, endpoint, slot, last_tgid, last_heard }
 ```
 
-- Fed passively from **every** ingress traffic frame — CALL_START and
+- Fed passively from **every** ingress traffic packet — headers and
   VOICE alike, so a long transmission keeps its talker routable — using
   metadata the frame already carries. No adapter cooperation required
   beyond honest metadata.
@@ -470,7 +470,7 @@ that is the reference implementation. Never re-derive the LC per frame,
 and never let the header and the LC be rewritten by different code paths.
 
 This is a standing bug class, not a one-time task. It is why every
-adapter owes a loopback-identity conformance vector (D-11, FRAME.md §7).
+adapter owes a loopback-identity conformance vector (D-11, FRAME.md §6).
 
 ## 8. Loop prevention (D-19)
 

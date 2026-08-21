@@ -107,62 +107,86 @@ Consequences carried forward:
 - Unslotted systems get a **nominal** slot at rules load, not a
   configured one (D-07).
 
-## D-05 — The frame wraps the untouched 33-byte DMR burst
+## D-05 — The interchange unit is the DMRD packet, untouched, with the
+## stream tag and origin system carried alongside
 
-Voice rides the core as the **33-byte on-air burst**, unmodified — the
-representation HBP and OBP already carry on the wire. IPSC re-packs the
-same DMR elements its own wire carries; CC-CC, the only transport with
-no burst or superframe data at all, synthesizes structure. Both at their
-own edges. HBP is the dominant traffic
-source, so the dominant path re-encodes nothing:
+What crosses the adapter/core boundary is the **HBP DMRD packet itself**,
+unmodified, plus two scalars the wire has no room for:
 
-| path | conversions |
-|---|---|
-| HBP→HBP, HBP→OBP, OBP→OBP, HBP→XLX | **0** |
-| IPSC→HBP, CC→HBP, IPSC→OBP | 1 |
-| IPSC→IPSC, CC→CC, IPSC→CC | 2 |
+```c
+void nx_core_ingress(uint16_t sys, uint32_t tag, const uint8_t *dmrd, int len);
+```
 
-The rejected alternative was a neutral internal representation (49-bit
-AMBE with FEC and interleave stripped) that every adapter converted into.
-It made the common path pay a full burst teardown and rebuild in order
-to make the rarest path free, and it gave the core the shape of a
-general-purpose media router rather than a DMR call router.
+HBP, OpenBridge, and XLX therefore hand the core exactly what arrived —
+no unpacking, no re-encoding, nothing. IPSC re-packs the DMR elements its
+own wire carries into a DMRD, which is what `ipsc2hbpc` already builds
+today. CC-CC, the only transport with no burst or superframe data at all
+(FRAME.md §4.1), assembles one.
 
-**The frame is not the DMRD packet, and that distinction is load-bearing.**
-Carrying HBP's 55-byte wire packet as the internal unit would look like
-an even purer version of this decision and is a trap. DMRD has no place
-to put the things the core needs and the wire does not carry: which
-configured system a frame arrived on, the core's own stream tag,
-late-entry/headerless status, or call-type flags that outlive one
-protocol's encoding. Worse, it would make IPSC and CC-CC adapters
-fabricate a repeater ID and a stream ID just to say anything at all, and
-it would promote OpenBridge's `PRESERVE_SOURCE_PEER` wart from a flag
-into the structure of the daemon.
+*(This supersedes an earlier D-05 that specified a 64-byte `nx_frame`
+struct wrapping the burst. Its stated justification was wrong: DMRD does
+carry call type, slot, frame type, and vseq in its `bits` byte, and
+`origin_system` was never a frame field — it is an argument at ingress
+and core stream-table state thereafter.)*
 
-So: an explicit frame (FRAME.md), carrying explicit metadata, wrapping
-the burst **byte-for-byte untouched**. Zero re-processing on the dominant
-path, without the core speaking one protocol's header.
+**The two scalars travel beside the packet, not inside it.** The
+alternative — overloading DMRD's `stream_id` field with the core tag —
+works, and it is tempting, but it makes a DMRD packet mean two different
+things depending on where it is in the pipeline, with no compiler help
+and a silent failure mode when an untagged packet reaches the core.
+Passing them as arguments costs three scalars on the stack, preserves the
+originating wire `stream_id` for cross-system debugging, and puts both
+values where they belong.
+
+**Why the tag exists at all** (mechanism in FRAME.md §3): every protocol
+identifies streams, but differently, and one of them lies — IPSC's
+call-seq byte is re-minted every superframe by XPR8400 firmware when
+Talker Alias is interleaved, so `ipsc2hbpc` anchors on RTP continuity
+instead. A core-assigned tag keeps that kind of pathology inside its
+adapter. It also removes an identity-collision class: because ingress
+keys on `(client, slot)` rather than the wire ID, two repeaters that pick
+the same random `stream_id` get different tags. That matters more than it
+sounds, because D-29 caches a delivery set against stream identity.
+
+**The core does not modify the packet.** It passes a `const` pointer plus
+delivery parameters; the egress adapter makes the one copy it was always
+going to make (to write its own `stream_id` and repeater ID) and rewrites
+the destination in the header and in the LC together — which is exactly
+what ROUTING §7 demands anyway.
+
+**The core is deliberately not protocol-agnostic, and that is the point.**
+Abstraction away from DMRD was only ever justified by a claim we do not
+actually make. OmniLink is DMR only (D-02), so there is no second air
+interface to stay neutral toward; HBP/MMDVM is the dominant transport in
+amateur DMR and OBP and XLX are DMRD-shaped, while IPSC and CC-CC are
+legacy support. **We do favour DMRD, because the network does.**
+Pretending otherwise cost CPU cycles on the dominant path and added a
+translation layer for errors to hide in, purely to avoid admitting a bias
+that is simply correct.
+
+So the core reads HBP's packed `bits` byte to learn slot, call type,
+frame type, and vseq, and that is fine. hblink3 has always worked this
+way.
 
 Accepted knowingly:
 
-- Legacy↔legacy paths pay two conversions where a neutral core would
-  have paid none. Lossless — the 72-bit FEC is derived from the 49 bits,
-  so 49→72→49 recovers exactly — so this is wasted microseconds, not
-  degraded audio, and it is the shrinking c-Bridge-to-c-Bridge case.
-- **LC-in-payload duplication becomes a core concern.** Source and
-  destination appear both in the frame header and inside the Link
-  Control, and every retarget must keep them in sync. This is not an HBP
-  quirk — IPSC carries a DMR LC too and dmrlink3 rewrites it in place on
-  retarget — so it is a property of DMR routing generally. This is a real,
-  recurring bug class. hblink3 solves it with per-stream precomputed LCs
-  and that approach is the reference implementation.
-- A path through CC-CC synthesizes burst structure (sync, EMB, slot
-  type, superframe position) that no downstream consumer reads. Bounded,
-  and it comes from `dmr/`'s fixed tables (D-28) — never from a canned
-  blob lifted out of a capture. **CC-CC is the only adapter that
-  synthesizes anything**: HBP, OBP, and XLX carry the assembled burst,
-  and IPSC carries every DMR element unpacked, so both merely assemble
-  what they were given.
+- **LC-in-payload duplication is a permanent concern.** Source and
+  destination appear in both the header and the Link Control, and every
+  retarget must keep them in sync. Not an HBP quirk — IPSC carries a DMR
+  LC too, and dmrlink3 rewrites it in place. ROUTING §7 is the standing
+  rule; hblink3's per-stream precomputed LCs are the reference.
+- **Retargeting clobbers Talker Alias.** TA rides in the embedded LC on
+  bursts B–E, which is exactly what a TGID rewrite replaces. A known
+  problem to be solved on its own merits; it is not created by this
+  decision and no internal representation would avoid it.
+
+What this buys, beyond simplicity: **the two hardest adapters lift
+verbatim.** `ipsc2hbpc/src/translate.c` already composes a DMRD and calls
+`hbp_send_dmrd()`; here that call becomes `nx_core_ingress()`. `cc2obp`
+already targets DMRD-shaped OpenBridge. Neither has its output boundary
+rewritten, and there is no byte-exact internal format to specify, test,
+and keep correct — DMRD is already specified and already exercised by
+four codebases in production.
 
 ## D-06 — OpenBridge is the trunk
 
@@ -377,7 +401,7 @@ in the daemon — no SQL, no ID database, no lookups on the datapath.
 Bit-representation mismatches between protocols are the dominant
 cross-protocol failure mode and are invisible to every test that does not
 decode audio. Every adapter ships **ingress vectors, egress vectors, and
-the loopback identity** (FRAME.md §7) before it is called done.
+the loopback identity** (FRAME.md §6) before it is called done.
 
 This rule was bought with debugging time. The c-Bridge's AMBE is a
 **3-lane block interleave of the ETSI d-bit order**, resembling nothing
@@ -423,7 +447,7 @@ design.
 
 Forward what was received; rebuild nothing.
 
-- Real headers and terminators cross as real CALL_START and CALL_END.
+- Real headers and terminators cross as real headers and terminators.
 - A headerless (late-entry) stream flows **headerless end to end** —
   egress builds a minimal LC from frame fields and emits no wire header.
 - `vseq` is read once at ingress and followed at egress. Relabeling burst
@@ -443,7 +467,7 @@ stream by emitting a terminator (`translate.c`, `on_stream_timeout` →
 `emit_term`). That is not a defect to port out. IPSC has no
 representation for "nothing," and a MOTOTRBO repeater left without a
 terminator **stays keyed**. The rule above governs *frames*: nothing
-fabricates a frame, no CALL_END is invented into the routing path, and no
+fabricates a packet, no terminator is invented into the routing path, and no
 other adapter emits a terminator it did not receive. What an IPSC egress
 puts on its own wire to close a transmission the far repeater is
 physically holding open is protocol machinery, and it stays.
@@ -486,7 +510,7 @@ audible garble, and no amount of edge arbitration catches it.
 
 So OmniLink adds a **per-bridge holder**: one stream holds a bridge at a
 time, acquired when the stream opens, released unconditionally on
-CALL_END or timeout. A stream matching several bridges (D-04) acquires
+call end or timeout. A stream matching several bridges (D-04) acquires
 per bridge and forwards to whichever it holds; the rest are reported as
 contention. A refused stream is **not queued** — DMR has no floor-control
 queueing — it is reported and discarded, and if the holder ends while the
@@ -546,7 +570,7 @@ truth and all slot arbitration.
 Operator visibility is therefore reconstructed from the event stream
 rather than from protocol: the core's `call_start` states **intent** (the
 members a stream was forwarded to); adapters event their **outcomes**
-(`slot_busy`, `endpoint_down`, `pfmt_unsupported`); the log and dashboard
+(`slot_busy`, `endpoint_down`, `payload_unsupported`); the log and dashboard
 join the two. The core does not track per-member outcomes and keeps
 forwarding regardless — wasted frames cost nothing at this scale, and
 slot scarcity is mechanism, not policy (D-21).
@@ -691,17 +715,21 @@ hblink4 keep their networks. OmniLink earns each role by passing the
 PLAN.md gate for it. Nothing double-binds a production port during
 testing.
 
-## D-25 — Frame extensibility policy
+## D-25 — The core routes on the DMRD header and never parses the burst
 
-Normative in FRAME.md §6. In summary: the core routes on the fixed
-header alone and **never parses payloads**; a `pfmt` field decouples
-payload encoding from frame type; unknown in-stream traffic types forward
-opaquely on an already-active stream; reserved space is zero-on-write; a
-4-bit `ver` field carries version discipline; IDs live in DMR's 24-bit
-space (D-02); packed fields use shift/mask accessors, never C struct
-bitfields.
+Normative in FRAME.md §2. The core reads source, destination, repeater
+ID, and the `bits` byte, and treats the 33-byte burst as opaque. Any
+feature requiring the core to look inside a burst is a design violation:
+extend an adapter instead.
 
-The frame is 64 bytes — one cache line.
+Forward-compatibility follows for free from DMRD being the unit — an
+unrecognized `frame_type`/`dtype_vseq` combination on a stream the core
+already has open is forwarded like any other traffic, so new in-stream
+DMR features need no core change and old egress adapters ignore what they
+do not implement.
+
+IDs are DMR's 24 bits (D-02). Packed fields use explicit shift/mask
+accessors, never C struct bitfields.
 
 ## D-26 — Unit (private) calls route from a target route cache
 
@@ -800,7 +828,7 @@ indication that nobody heard them. Splicing them into the call already
 running is the RF behavior: they unkey into the middle of a transmission
 and know to wait. Silent-but-busy is an IP-only failure mode.
 
-Ordering on CALL_START: activation triggers fire **before** the delivery
+Ordering at call start: activation triggers fire **before** the delivery
 set is resolved, so the transmission that brings a member in reaches it.
 
 This also makes `call_start`'s intent list (D-17) a floor rather than a

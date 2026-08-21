@@ -35,7 +35,7 @@ already been folded into the current documents and are noted here so the
 reasoning is not lost:
 
 - **The XLX module link is protocol machinery, not frame synthesis.** The
-  five-frame link burst never becomes an `nx_frame` and never enters the
+  five-frame link burst never becomes a routed stream and never enters the
   core, so it does not violate "nothing synthesizes frames" — that rule
   governs fabricating call content into the routing path. Now stated
   directly in ADAPTERS.md §4.1 and D-14.

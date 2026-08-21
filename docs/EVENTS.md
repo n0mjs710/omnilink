@@ -108,7 +108,7 @@ fields.** Plane: S = systems, B = bridge, G = global.
 | `call_end` | B+S+G | + `duration_s`, `frames`, `reason` (`term`\|`timeout`) | core; adapters for local |
 | `stream_contention` | B | bridge, loser src/system, holder src/system, `same_src` flag (D-19) | core |
 | `loop_suspected` | B | bridge, src, systems involved, capture count and gaps — **alarm class**, surface prominently (D-19) | core |
-| `slot_busy`, `pfmt_unsupported`, `endpoint_down` | S | system, slot, dropped stream, holder (including local holders) — the **outcome** half; join with `call_start` intent (D-17) | adapters |
+| `slot_busy`, `payload_unsupported`, `endpoint_down` | S | system, slot, dropped stream, holder (including local holders) — the **outcome** half; join with `call_start` intent (D-17) | adapters |
 | `bridge_member_state` | B | bridge, member, `active`, cause (`trigger_on`\|`trigger_off`\|`timeout`\|`operator`\|`reload`) | core |
 | `acl_denied` | G | acl that fired, system, src or tgid, slot — rate-limited (ROUTING §2.1) | core; adapters for `reg` |
 | `reload_ok`, `reload_failed` | G | generation, findings (all of them, verbatim) | core |
