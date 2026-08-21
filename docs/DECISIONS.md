@@ -569,6 +569,10 @@ Two riders that are easy to get wrong:
 
 ## D-18 — Local repeat lives in the HBP adapter; IPSC has none
 
+A *system* is the set of endpoints that hear each other without the
+router (ROUTING §1). How that is achieved is protocol-specific, and this
+decision is that difference.
+
 An HBP server must repeat traffic among its own connected clients —
 that is the client/server obligation — and it does so **inside the
 adapter**, never via the core. The core still sees every stream exactly

@@ -13,10 +13,20 @@ from it, the departure is called out explicitly and marked
 
 ## 1. Vocabulary
 
-- **System** — one configured protocol instance: an HBP server, an HBP
-  client, an IPSC network, an OBP link, a CC-CC conduit, an XLX module
-  connection. One `[[system]]` stanza. Immutable after startup (D-09),
+- **System** — **the set of endpoints that hear each other without the
+  router.** One `[[system]]` stanza; immutable after startup (D-09);
   indexed by a `uint16_t` used as `origin_system` in the frame.
+
+  The word comes from IPSC, where a *system* is the peer-to-peer mesh
+  itself — peers hear each other directly and the router is not in that
+  path. It carries to HBP as a server and the clients connected to it,
+  which hear each other through that server's local repeat. Same
+  meaning, different mechanism, which is exactly why local repeat is an
+  adapter duty on HBP and does not exist on IPSC (D-18).
+
+  Bound endpoints (OBP, CC-CC, XLX) are the degenerate case: one
+  connection, nothing to circulate. That is the same fact D-07 describes
+  from the other side.
 - **Bridge** — a named conference, and the unit of routing. A bridge is
   the *only* way traffic moves between systems.
 - **Member** — one system's participation in one bridge:

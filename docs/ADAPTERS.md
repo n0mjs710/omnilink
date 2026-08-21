@@ -123,7 +123,7 @@ Egress is where the protocols differ, and one of them has no choice:
 |---|---|
 | HBP | the local system's ID (standard) |
 | OBP | `network_id` by OBP convention; `preserve_source_peer` retains the original instead |
-| IPSC | **must** be the local peer's radio ID — the peer ID is the authenticated identity in the IPSC peer list, so this is a protocol requirement, not a policy choice (dmrlink3 rewrites it unconditionally) |
+| IPSC | **must** be the local peer's radio ID — an IPSC mesh will not forward a call that did not come from one of its own peers, so a foreign source peer is simply not repeated. A protocol requirement, not a policy choice; dmrlink3 rewrites it unconditionally |
 | CC-CC | the conduit's own identity; the originating peer rides in the B-on |
 
 This is entirely an adapter concern. The core neither knows nor cares
@@ -418,9 +418,11 @@ directions, which is why D-28's fixed CC-1 tables cost nothing.
 - **Egress:** unpack the burst back to AMBE and IPSC's own fields, slot
   from the egress target, IPSC sequence and RTP fields owned here — the
   ipsc2hbpc HBP→IPSC path, already solved. **The IPSC peer ID is always
-  rewritten to this system's own radio ID** — it is the authenticated
-  identity in the peer list, so unlike OBP there is no preserve option
-  (§1.2; dmrlink3 rewrites it unconditionally).
+  rewritten to this system's own radio ID.** A mesh will not forward a
+  call that did not originate from one of its peers, so injecting
+  traffic means identifying as the mesh member doing the injecting —
+  which is exactly what OmniLink is. Unlike OBP there is no preserve
+  option (§1.2).
 - **Retarget rewrites the IPSC LC in place.** IPSC has the same
   LC-in-payload duplication HBP does: the packet carries both header
   src/dst and a DMR LC, and a member with a different TGID needs both
