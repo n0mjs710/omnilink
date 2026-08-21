@@ -297,7 +297,10 @@ The trunk (D-06), and the HBlink4 interconnect (D-03).
   The reference implementation does not validate the field —
   authentication is the HMAC plus the source socket — so both are safe;
   it is per-system config because it is only *useful* when the far end
-  preserves it too.
+  preserves it too. This was added after it was discovered that while
+  Brandmeister published the requirement subsequent to work with IPSC2,
+  they do not bother to check/enforce the requirement, which allow us
+  to pass the original source-peer as well.
 
 ---
 
