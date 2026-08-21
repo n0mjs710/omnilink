@@ -95,6 +95,19 @@ radio_id = 312000
 callsign = "W1ABC"
 loose = false
 
+# Self-description sent in the RPTC login record. Announcement metadata
+# only -- see §2.3. Nothing here affects routing or burst construction.
+[system.announce]
+colorcode = 1
+rx_freq   = 449000000
+tx_freq   = 444000000
+power     = 25
+latitude  = 38.9
+longitude = -95.2
+location  = "Lawrence, KS"
+description = "OmniLink"
+url       = "https://example.net"
+
 # --- OpenBridge ---
 [[system]]
 name = "BM-3102"
@@ -136,6 +149,28 @@ callsign = "W1ABC"
 **Hostnames are resolved once, at startup** (D-22). Every `server`,
 `master`, and `target` becomes a stored `sockaddr` and no reconnect timer
 or datapath ever calls `getaddrinfo` again.
+
+### 2.3 `[system.announce]` — self-description, and nothing else
+
+HBP peer mode and XLX send an RPTC configuration record at login:
+callsign, frequencies, power, location, and colour code. It is pure
+self-description — what we tell a master about ourselves, exactly as
+`ipsc2hbpc/src/hbp.c:76` sends it today — and a master-mode system
+parses the same record from connecting repeaters for the dashboard.
+
+It lives in its own table, and `colorcode` lives *only* here, for a
+reason worth stating: **the colour code is announcement metadata and
+never a burst input** (D-28). Constructed bursts are built at colour code
+1 from `dmr/`'s fixed tables, passed-through bursts are never rewritten,
+and nothing in the daemon branches on the value. A single `colorcode` key
+serving both the login record and burst construction is precisely how an
+RF-local parameter drifts into becoming a gate, so the two are kept
+apart by name and by table.
+
+hblink3 makes the same distinction, though less visibly: its
+`CONFIGURING.md` calls `COLORCODE` the "Reported DMR color code," and
+`hblink.py:641,687` parses it out of a connecting repeater's RPTC record
+for display.
 
 ## 3. `rules.toml`
 

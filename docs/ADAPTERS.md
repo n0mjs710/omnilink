@@ -289,8 +289,17 @@ directly to its socket, exactly like a login or a keepalive. The
 "nothing synthesizes frames" rule (D-14) is about fabricating call
 content into the routing path and is not weakened here.
 
-**Never lift a canned payload blob** from prior art. The link burst is
-built from this system's configured values every time.
+**Never lift a canned payload blob** from prior art. The link burst's LC
+is built from this system's own radio ID and the target module TGID every
+time; its structure comes from `dmr/`'s fixed CC-1 tables.
+
+**Do not port hblink3's `xlx_slot_type()`.** That helper exists only
+because hblink3 lets an XLX system declare a colour code, and its own
+comment says so. OmniLink builds at CC 1 (D-28), so the precomputed
+`DMR_SLOT_TYPE_VHEAD`/`VTERM` constants are exactly right and no
+Golay(20,8) encoder is needed. xlxd does not inspect the colour code in
+any case — its five gates read the DMRD header byte and the sync
+pattern, never the slot type's CC nibble.
 
 ### 4.2 Binding and config
 
@@ -343,8 +352,13 @@ reason this section exists.
   extracted as 49-bit and then **built into a 33-byte burst** (`dmr/`:
   49→72, BPTC LC, slot type, sync) per FRAME §4.1. IPSC is one of the two
   adapters that constructs rather than copies, so the LC must agree with
-  the frame header and the colour code comes from config. Call boundaries
-  from IPSC burst types; `origin_peer` from the IPSC RptrId field;
+  the frame header. Structure (slot type, EMB, sync) comes from `dmr/`'s
+  fixed CC-1 tables. **IPSC carries no colour code on the wire in either
+  direction** — repeaters within one IPSC system routinely run different
+  colour codes with no effect on the IPSC side, each applying its own
+  from its codeplug (D-28) — so the value invented here is discarded
+  before it reaches the air. Call boundaries from IPSC burst types;
+  `origin_peer` from the IPSC RptrId field;
   per-network keepalive state → `nx_core_system_state` plus events.
 - **Egress:** IPSC voice packet synthesis (the ipsc2hbpc HBP→IPSC path,
   already solved), slot from the egress target, IPSC sequence and RTP
@@ -434,7 +448,7 @@ until this adapter passes its live gate (D-24). Never double-bind UDP
   so the 9-byte LC (`pfmt 1`) is constructed from its metadata, which is
   translation of a real event rather than synthesis. Media → AMBE
   triplets built up into bursts per FRAME §4.1, with the LC agreeing with
-  the frame header and colour code and sync from configured values.
+  the frame header and structure from `dmr/`'s fixed CC-1 tables (D-28).
   B-off → CALL_END.
 
   **Assign a real `vseq`.** The adapter is choosing sync-at-A versus

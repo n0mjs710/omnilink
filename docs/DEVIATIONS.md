@@ -40,7 +40,10 @@ reasoning is not lost:
   governs fabricating call content into the routing path. Now stated
   directly in ADAPTERS.md §4.1 and D-14.
 - **`dmr/` cannot build a burst at a configured colour code as
-  vendored.** `DMR_SLOT_TYPE_VHEAD`/`VTERM` are precomputed for colour
-  code 1 and `golay.c` has no Golay(20,8) encoder. Now a named phase-0
-  task rather than a discovery waiting to happen (FRAME.md §4.1,
-  PLAN.md phase 0).
+  vendored.** `DMR_SLOT_TYPE_VHEAD`/`VTERM` and `DMR_EMB` are precomputed
+  for colour code 1 and `golay.c` has no Golay(20,8) encoder. This was
+  briefly a phase-0 task to add one; **that task is withdrawn.** Colour
+  code turned out not to be configurable at all (D-28) — it is RF-local,
+  regenerated at the far repeater — so the CC-1 tables are exactly right
+  and `dmr/` is complete as vendored. The finding was real; the
+  conclusion drawn from it was wrong.

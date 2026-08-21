@@ -174,7 +174,8 @@ For **HBP and OBP** this is a copy — ingress and egress touch the burst
 only where routing requires it (§4.1.1). For **IPSC and CC**, which carry
 bare 3 × 49-bit AMBE, the adapter builds the burst on ingress and reduces
 it on egress; `dmr/` implements every primitive (`dmr_ambe_49_to_72` and
-its inverse, BPTC, Golay/QR slot type, sync tables).
+its inverse, BPTC, embedded LC, RS(12,9), and the precomputed slot-type,
+EMB, and sync tables).
 
 Two rules bind any adapter that must **construct** a burst:
 
@@ -185,21 +186,64 @@ Two rules bind any adapter that must **construct** a burst:
    every test that does not decode audio, and it has been shipped before
    in this ecosystem. See ROUTING §7 for the standing rule.
 
-2. **Invented fields come from real configuration.** Colour code, sync
-   flavour, and EMB are not present in IPSC or CC traffic and must be
-   synthesized. They come from the system's configured values — **never
-   from a captured constant.**
+2. **The LC must be built from real values, never from a captured
+   constant.** FLCO, FID, service options, source, and destination come
+   from the stream being carried. Lifting a known-good burst blob from
+   prior art and patching a couple of fields is how contradictory bursts
+   get shipped.
 
-   > **`dmr/` cannot do this as vendored, and this gap must be closed
-   > deliberately before the HBP phase.** `DMR_SLOT_TYPE_VHEAD` and
-   > `VTERM` in `dmr_const.c` are precomputed for **colour code 1**, and
-   > `golay.c` carries `golay2312` (for AMBE) but no Golay(20,8)
-   > slot-type encoder. Building a burst at a configured colour code
-   > needs one — about twenty lines. hblink3 had to add exactly this
-   > (`xlx_slot_type()`) for its XLX link. Add it to `dmr/` on purpose
-   > and upstream it; `dmr/` is vendored read-only (STYLE.md), so an
-   > implementer who discovers the gap mid-adapter will stop rather than
-   > patch it locally.
+   Structural fields that are genuinely absent from the origin — sync
+   flavour, EMB, slot type — come from `dmr/`'s tables at colour code 1,
+   per §4.1.2. They are not configuration.
+
+#### 4.1.2 Colour code is RF-local: never read it, never rewrite it, use
+#### 1 when you must invent one
+
+Colour code is an RF air-interface interference-mitigation mechanism: it
+lets a receiver ignore a co-channel repeater it is not meant to hear.
+That is the whole of its purpose. It has no meaning between repeaters,
+and the far repeater applies its own before transmitting. Three rules
+follow, and they are not the same rule (D-28):
+
+- **Never read it.** It is not a routing key, not an ACL input, not a
+  match condition, not a filter. Nothing in OmniLink branches on a colour
+  code, ever.
+- **Never rewrite it.** A passed-through burst keeps whatever the origin
+  put there. This is not deference — it is the zero-re-encode property of
+  D-05: normalizing the colour code would mean re-encoding the slot type
+  and both EMB halves on every burst of every call on the dominant path,
+  to change a value nobody downstream reads.
+- **Use 1 when you must invent one.** IPSC and CC-CC ingress construct
+  bursts, and the XLX module link builds one from nothing. All use
+  `dmr/`'s precomputed CC-1 tables.
+
+A consequence worth stating plainly, because it looks wrong: **a stream
+can carry a foreign colour code end to end.** A repeater at CC 7 sends a
+burst stamped CC 7, and it arrives at a repeater configured for CC 3
+still stamped 7. That is fine, and it is what hblink3 has done in
+production for years — which is itself the proof that the destination
+regenerates, since bridging repeaters on different colour codes is
+routine and works.
+
+**Retargeting never touches it.** hblink3's `embed_lc()` (`bridge.py:90`)
+is explicit: a header or terminator is rebuilt as
+`lc[0:98] + original[98:166] + lc[98:197]`, preserving bits 98–166 —
+which is exactly slot type, sync, slot type. A voice burst B–E is rebuilt
+as `original[0:116] + fragment + original[148:264]`, preserving both EMB
+halves. The colour code lives in the slot type and in EMB, and neither is
+ever re-encoded.
+
+So `dmr/` is **complete as vendored** for this project:
+`DMR_SLOT_TYPE_VHEAD`/`VTERM` and `DMR_EMB[5][16]` are precomputed at
+CC 1, which is all a constructing adapter needs. No Golay(20,8) slot-type
+encoder is required. hblink3 needed one (`xlx_slot_type()`) solely
+because it chose to let an XLX system declare a colour code; we do not
+make that choice, so the gap does not exist.
+
+Both production C bridges already work this way:
+`ipsc2hbpc/src/translate.c:369-385` and `cc2obp/translate.c:110-114`
+build head/term bursts from the CC-1 constants, and ipsc2hbpc carries the
+live IPSC bridge.
 
 #### 4.1.1 Retargeting
 
@@ -218,8 +262,8 @@ production.
 adapter whose wire carries a burst (HBP, OBP, IPSC). This is the form
 that keeps D-05's promise: an HBP header crosses the core untouched like
 every other burst, with no BPTC decode on ingress and no re-encode on
-egress. It also preserves the origin's colour code and sync flavour,
-which a rebuilt header would silently replace with ours.
+egress. The origin's colour code and sync flavour ride along untouched,
+which is the correct handling for both (§4.1.2) and costs nothing.
 
 **`pfmt 1` — the decoded 9-byte LC** (FLCO, FID, service options, dst24,
 src24). For adapters whose wire has no burst to carry: CC-CC, which

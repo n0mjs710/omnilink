@@ -26,13 +26,14 @@ because they are what changed:
   libc only), directory layout per ARCHITECTURE §6.
 - Lifted modules copied in: `dmr/`, `eventloop`, `toml`, `net`, `log`,
   `crypto`. `make test` runs their existing self-tests under this tree.
-- **Close the `dmr/` gap deliberately** (FRAME §4.1): add the Golay(20,8)
-  slot-type encoder and colour-code-parameterized VHEAD/VTERM. Doing it
-  here, on purpose, prevents an implementer hitting it mid-adapter
-  against a read-only vendored module. Upstream it.
+- **`dmr/` is complete as vendored and needs no additions** (D-28).
+  Because constructed bursts are built at colour code 1, the precomputed
+  `DMR_SLOT_TYPE_VHEAD`/`VTERM` and `DMR_EMB` tables are exactly right.
+  An earlier draft of this plan called for adding a Golay(20,8) slot-type
+  encoder; that requirement existed only because colour code was
+  configurable, and it is withdrawn. Do not add one.
 
-**Gate:** clean build, lifted-module tests green on the dev server, and a
-unit test that builds a slot type at a non-default colour code.
+**Gate:** clean build, lifted-module tests green on the dev server.
 
 ## Phase 1 — Core (the biggest single phase)
 
