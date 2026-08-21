@@ -35,7 +35,7 @@ edits across several systems.
 
 ## It is HBlink3, in C, with the rest of the world plugged in
 
-That is the shortest honest description, and it drives everything else.
+That is the short description.
 
 **HBlink3's routing semantics are the specification.** Bridges are keyed
 on `(system, timeslot, talkgroup)` and one transmission can feed several
