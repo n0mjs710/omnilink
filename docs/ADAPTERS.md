@@ -88,9 +88,9 @@ entered the network through. Three rules:
 
 Egress is where the protocols differ, and one of them has no choice:
 
-| adapter | egress source peer |
+| adapter | egress repeater ID |
 |---|---|
-| HBP | the local system's ID (standard) |
+| HBP | **the original, preserved.** Substituting the local system's ID is neither required nor useful — an HBP client does not act on the field, and preserving it carries the true origin to the far dashboard. hblink3 does this: `bridge.py` copies `_data[11:15]` unchanged. |
 | OBP | `network_id` by OBP convention; `preserve_source_peer` retains the original instead |
 | IPSC | **must** be the local peer's radio ID — an IPSC mesh will not forward a call that did not come from one of its own peers, so a foreign source peer is simply not repeated. A protocol requirement, not a policy choice; dmrlink3 rewrites it unconditionally |
 | CC-CC | the conduit's own identity; the originating peer rides in the B-on |
@@ -115,11 +115,12 @@ Split by what the core can see (D-21):
 ### 1.4 Universal egress duties (core → wire)
 
 - **Copy once, rewrite everything in that pass.** The core hands a
-  `const` packet; the adapter copies it to write its own wire stream ID
-  and repeater ID, and rewrites the destination in the header and in the
-  LC at the same time (FRAME §4.1, via `dmrlc.c`). CC-CC additionally
+  `const` packet; the adapter copies it and rewrites the target slot in
+  the `bits` byte plus, where the member's TGID differs, the destination
+  in the header and in the LC together (FRAME §4.1, via `dmrlc.c`).
+  Repeater ID and wire `stream_id` pass through. CC-CC additionally
   reduces the burst to AMBE (`dmr_ambe_72_to_49` ×3); IPSC unpacks to its
-  own field layout.
+  own field layout and mints its own identifiers.
 - Slotted protocols call **`channel.c`** for per-`(system, slot)`
   arbitration, hang time, and the `stream_to` contention horizon
   (ROUTING §5.2), with local-repeat traffic in the same arbitration
@@ -176,12 +177,11 @@ list (§5.2). Both are correct; neither is the other.
   stream-tag lookup (FRAME §3.1), pooled per client and slot. **No
   decoding of any kind** — not the burst, not the LC.
 - **Egress (passthrough):** write the packet back out, touched only
-  where routing requires — a new wire `stream_id` per stream, the local
-  repeater ID, the target slot in the `bits` byte, and the destination in
-  header and LC if the member's TGID differs (FRAME §4.1). Arbitration
-  via `channel.c`. No pacing.
-- **Repeater ID:** on ingress it is whatever arrived; on egress it is
-  the local system's ID (§1.2).
+  where routing requires — the target slot in the `bits` byte, and the
+  destination in header and LC if the member's TGID differs
+  (FRAME §4.1). Repeater ID and wire `stream_id` pass through unchanged,
+  as hblink3 does. Arbitration via `channel.c`. No pacing.
+- **Repeater ID passes through unchanged** in both directions (§1.2).
 
 ### 2.1 Local repeat — the client/server obligation (D-18)
 

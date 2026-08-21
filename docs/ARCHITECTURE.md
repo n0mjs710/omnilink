@@ -152,10 +152,10 @@ their genuinely protocol-specific parts, which was the point.
   playout buffer, and it copies. Bounded, sized at init.
 - **The core copies nothing.** It never modifies a packet: it passes a
   `const` pointer plus delivery parameters, and the egress adapter makes
-  the one copy it was always going to make — to write its own stream ID
-  and repeater ID — rewriting the destination in the header and in the
-  LC in the same pass (FRAME.md §4.1). One copy per delivery, in the
-  place that has to touch the bytes anyway.
+  the one copy, rewriting the target slot and — where the TGID differs —
+  the destination in the header and in the LC in the same pass
+  (FRAME.md §4.1). One copy per delivery, in the place that has to touch
+  the bytes anyway.
 - Fixed-capacity pools use freelists with plain indices. Single thread
   means single owner for everything; there are no exceptions to reason
   about.

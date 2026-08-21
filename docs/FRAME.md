@@ -108,10 +108,9 @@ the second one's audio is delivered on the first one's cached delivery
 set (D-29) — wrong talkgroup, wrong members, until the overlap ends.
 Bounded and self-healing, but wrong while it lasts, and unreproducible.
 
-**It is nearly free.** The ingress map must exist to detect a new stream
-at all, and the egress map must exist because one core stream fanned to
-three HBP systems needs three distinct wire stream IDs. The tag is just
-what those maps hold.
+**It is nearly free.** Both maps must exist regardless: ingress to detect
+a new stream at all, egress to hold the per-stream, per-target LC cache
+and the headerless marker. The tag is just what they are keyed on.
 
 ### 3.1 Mechanism
 
@@ -126,8 +125,14 @@ and keepalives, so this is `ep->slot[ts].tag` — compare the stored wire
 ID against the arriving one, equal on nearly every packet, so the common
 path is two loads and a compare. On change, allocate a tag.
 
-**Egress map**, also private: tag → this system's wire identity. Mint a
-fresh `stream_id` on the first packet of an unseen tag.
+**Egress map**, also private: tag → per-stream state for this system —
+the precomputed LCs for the target's TGID (§4.1) and whether the stream
+is headerless.
+
+**The wire `stream_id` and repeater ID pass through unchanged** on HBP,
+OBP, and XLX; hblink3 does the same (`bridge.py` copies `_data[11:15]`
+and `_data[16:20]` verbatim). Only IPSC and CC-CC mint an identifier,
+because neither wire carries one to forward.
 
 Both maps expire on call end or their own inactivity timer.
 
@@ -192,11 +197,10 @@ destination **and** the burst's LC and embedded-LC fragments all carry the
 old destination and must be rewritten together.
 
 **The core does not do this; the egress adapter does.** The core passes a
-`const` pointer and the delivery parameters, and the adapter makes the one
-copy it was always going to make — to write its own `stream_id` and
-repeater ID — rewriting header destination and LC in the same pass. That
-is the cheapest way to satisfy rule 1, because the two edits then cannot
-physically drift apart.
+`const` pointer and the delivery parameters; the adapter copies and
+rewrites header destination and LC in the same pass. That is the cheapest
+way to satisfy rule 1, because the two edits then cannot physically drift
+apart.
 
 Generate the replacement LCs **once per stream per target**, then splice
 per burst by position. Do not rebuild per packet. hblink3's `gen_lcs()` /
