@@ -58,9 +58,9 @@ implementers**. When in doubt, open `ipsc2hbpc/src/` and match it.
   'pthread_|sem_|_Atomic|atomic_'` over `src/` returns nothing today.
   Treat a hit as a tripwire, not a crime: adding a thread is a design
   change to be raised and decided, never introduced mid-task. If one is
-  ever added, what is avoided is queues and locks rather than threads:
-  prefer sharing state through atomics, then a lock-free ring, and locks
-  only as a last resort.
+  ever added, what is avoided is locking rather than threading: lock-free
+  is fine — atomics for state, an SPSC ring for packets — and locks are
+  the last resort.
 - Every socket non-blocking; every fd in an `ev_loop`. No `sleep`, no
   blocking `connect` (use the eventloop timer + retry pattern from
   cc2obp `net.c`).

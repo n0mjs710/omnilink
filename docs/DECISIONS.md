@@ -197,20 +197,17 @@ in about a second, and calls in flight are lost exactly as they would be
 at an RF site taking a power hit.
 
 **This is a preference with fallbacks, not a prohibition** — the same
-shape as D-32. Threads are not the thing being avoided; **queues and
-locks are.** If a thread genuinely serves lightweight, high-performance
-operation, it is the right choice. Order of preference:
+shape as D-32. Threads are not the thing being avoided, and neither is
+lock-free coordination. **Locking is.** Order of preference:
 
 1. **One thread on the event loop.** The default, and correct while the
-   daemon is I/O bound. No queue, no lock.
-2. **A thread sharing state through atomics alone** — a flag, a counter,
-   a pointer. Still no queue, still no lock.
-3. **A thread behind a lock-free SPSC ring.** No lock, but a ring *is* a
-   queue, and a queue costs latency, memory, cache traffic, and one more
-   thing to reason about. Acceptable when a thread must carry packets
-   rather than state; not the ideal.
-4. **Locks.** Last resort, and usually a sign the split is in the wrong
-   place.
+   daemon is I/O bound.
+2. **Lock-free threading** — atomics for state, a
+   single-producer/single-consumer ring for packets. Both are fine when a
+   thread earns its place.
+3. **Locks.** Where it starts to get ugly: contention, ordering, and
+   deadlock reasoning that spreads well beyond the code that took the
+   lock. Last resort, and usually a sign the split is in the wrong place.
 
 What is rejected is the everything-is-a-thread habit — reaching for
 concurrency by default and paying its coordination cost whether or not

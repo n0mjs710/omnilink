@@ -80,12 +80,11 @@ so a thread would buy stall isolation and nothing else — and that is
 already bounded by a systemd watchdog plus instance federation.
 
 This is a preference with fallbacks, not a ban. Threads are not what is
-being avoided — **queues and locks are.** If a thread ever serves
-lightweight, high-performance operation better, prefer one that shares
-state through **atomics** alone; a lock-free ring is acceptable when
-packets rather than state must cross, but a ring is still a queue and
-costs latency, memory, and cache traffic. Locks are the last resort and
-usually mean the split is in the wrong place.
+being avoided, and neither is lock-free coordination — **locking is.** If
+a thread ever serves lightweight, high-performance operation better,
+lock-free is fine: atomics for state, an SPSC ring for packets. Locks are
+the last resort, where contention, ordering, and deadlock reasoning start
+spreading beyond the code that took them.
 
 The adapter contract is the seam that keeps this open. Adding a thread is
 a design change, made deliberately (D-08), not introduced mid-task.
