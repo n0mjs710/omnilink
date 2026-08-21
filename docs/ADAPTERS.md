@@ -204,7 +204,7 @@ The dominant transport (D-05), and the only adapter split across two
 files (ARCHITECTURE §3.1): `hbp_proto.c` for the wire, `hbp_service.c`
 for the repeater service.
 
-**HBP is client/server, and the vocabulary matters.** A server accepts
+**HBP is client/server, the distinction is important.** A server accepts
 registrations from repeaters and hotspots and repeats among them; a
 client dials out and logs in. It is never "master and peer" — that is
 IPSC's vocabulary, borrowed by tools that arrived after it, and it
