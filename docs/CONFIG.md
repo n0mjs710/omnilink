@@ -60,12 +60,22 @@ that owns one (D-16, ROUTING §5.2):
 
 ```toml
 group_hangtime = 4.0          # s; per-(system,slot) hang. 0 disables.
-stream_to      = 0.36         # s; silent-stream slot release. NOT stream_timeout.
+stream_to      = 0.36         # s; how long a silent outbound stream holds
+                              # its slot. NOT [core].stream_timeout.
 ```
 
-`stream_to` and `[core].stream_timeout` are two timers doing two jobs and
-the sample file says so in a comment, because conflating them holds a
-slot for two seconds after every dropped stream.
+**`stream_to` and `[core].stream_timeout` are different timers owned by
+different components**, and the similar names invite setting them alike:
+
+| | owner | measures |
+|---|---|---|
+| `stream_to` (0.36 s) | the adapter | how long a silent **outbound** stream keeps its slot |
+| `[core].stream_timeout` (2.0 s) | the core | how long the core keeps state for a silent stream |
+
+A transmission that simply stops — no terminator, which is routine on
+DMR — has to release its slot fast enough that the next talker is not
+refused. Set `stream_to` to `stream_timeout` and every dropped stream
+blocks its slot for a full two seconds.
 
 Per-system ACL keys are documented in §5.
 
