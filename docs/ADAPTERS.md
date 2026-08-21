@@ -44,11 +44,6 @@ bool nx_acl_check_reg(uint16_t sys, uint32_t endpoint_id); /* §1.3 */
 Everything is a direct synchronous call on one thread — no queues, no
 rings, no handoffs (ARCHITECTURE §2).
 
-**The target is a parameter, never config the adapter holds.** An adapter
-carrying a private replica of bridge membership would be policy at the
-edge (D-21), and it would not work anyway: unit calls route from the
-core's cache, which no adapter can see.
-
 **Each system is a fully isolated instance.** The adapter *type* is
 shared code only. Every configured system gets its own state object —
 sockets, endpoints, streams, counters, the moral equivalent of one
