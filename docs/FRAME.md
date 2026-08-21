@@ -132,7 +132,18 @@ is headerless.
 **The wire `stream_id` and repeater ID pass through unchanged** on HBP,
 OBP, and XLX; hblink3 does the same (`bridge.py` copies `_data[11:15]`
 and `_data[16:20]` verbatim). Only IPSC and CC-CC mint an identifier,
-because neither wire carries one to forward.
+because neither wire carries one to forward. Preserving means one stream
+ID follows a call through every system it touches, which is what makes a
+multi-hop path traceable.
+
+There is no reason to re-mint on HBP or XLX: slot arbitration
+(ROUTING §5.2) allows one outbound stream per `(system, slot)` at a time,
+so two streams sharing an ID can never be concurrent there. **OBP is the
+one place they could be**, since it trunks concurrent streams with no
+arbitration — but a single link carries a handful of streams against the
+core's two hundred, so the exposure is orders of magnitude below the
+collision the tag exists to prevent, and hblink3 has run this way
+indefinitely. Accepted; traceability is worth more.
 
 Both maps expire on call end or their own inactivity timer.
 
