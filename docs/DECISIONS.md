@@ -588,7 +588,8 @@ network owes the repeater; colour code is information the repeater owes
 itself.
 
 Consequences: no `colorcode` key exists for burst construction — the
-value appears only in `[system.announce]`, as HBP login self-description.
+value appears only in a system's login self-description (CONFIG §2.3),
+and only on systems that log in.
 `dmr/` is complete as vendored; no Golay(20,8) slot-type encoder is
 needed and hblink3's `xlx_slot_type()` is not ported.
 

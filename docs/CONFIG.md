@@ -105,18 +105,21 @@ radio_id = 312000
 callsign = "W1ABC"
 loose = false
 
-# Self-description sent in the RPTC login record. Announcement metadata
-# only -- see §2.3. Nothing here affects routing or burst construction.
-[system.announce]
-colorcode = 1
-rx_freq   = 449000000
-tx_freq   = 444000000
-power     = 25
-latitude  = 38.9
-longitude = -95.2
-location  = "Lawrence, KS"
+# Self-description sent in the RPTC login record (§2.3). Client mode
+# only; nothing here affects routing or burst construction.
+rx_freq     = 449000000
+tx_freq     = 444000000
+tx_power    = 25
+colorcode   = 1
+slots       = 1
+latitude    = 38.9
+longitude   = -95.2
+height      = 75
+location    = "Anywhere, USA"
 description = "OmniLink"
-url       = "https://example.net"
+url         = "https://example.net"
+software_id = "20260821"
+package_id  = "OmniLink"
 
 # --- OpenBridge ---
 [[system]]
@@ -133,11 +136,30 @@ preserve_source_peer = false
 [[system]]
 name = "MOTO-EAST"
 protocol = "ipsc"
-mode = "peer"                 # peer | master -- IPSC only (§2.4)
+mode = "peer"                 # peer | master -- IPSC only (§2.5)
 bind = "0.0.0.0:50000"
-master = "10.0.0.1:50000"
-radio_id = 3120001
+master = "10.0.0.1:50000"     # peer mode only
+radio_id = 9999999            # the ID WE present on the mesh, master or
+                              # peer. Not any repeater's ID; must be
+                              # unique on the system.
+auth_enabled = false          # IPSC HMAC-SHA1
+auth_key     = ""             # <= 40 hex chars; left-zero-padded
+
+keepalive_watchdog   = 60     # s without a keepalive before the far end
+                              # is declared lost. Minimum 5.
+keepalive_interval   = 5      # peer mode only; Motorola default
+keepalive_missed_max = 3      # peer mode only
+
+peer_ip_acl  = []             # optional source-address restriction;
+                              # [] accepts any. Radio-ID admission is
+                              # reg_acl (§5).
+
 egress_clock = true           # position-preserving playout (D-15)
+ts_prefer_call_info = false   # DMRlink confbridge workaround -- see
+                              # ADAPTERS §5.3
+
+[system.capabilities]         # what we advertise to IPSC peers
+use_safe_defaults = true      # true ignores everything below
 
 # --- CC-CC conduit ---
 [[system]]
@@ -154,6 +176,8 @@ server = "xlx307.example.net:62030"
 module = "D"                  # letter A-Z only; numbers are an error.
                               # Most reflectors only have A-J -- a module
                               # the far end lacks never links, silently.
+# XLX logs in, so it takes the same self-description keys as an HBP
+# client (§2.3).
 radio_id = 312000
 callsign = "W1ABC"
 ```
@@ -162,7 +186,42 @@ callsign = "W1ABC"
 `master`, and `target` becomes a stored `sockaddr` and no reconnect timer
 or datapath ever calls `getaddrinfo` again.
 
-### 2.4 Mode names follow each protocol's real architecture
+### 2.3 Login self-description
+
+A system that **logs in to something** sends an RPTC configuration
+record: callsign, frequencies, power, colour code, location, and so on.
+That is HBP `client` mode and XLX. The keys sit directly in the
+`[[system]]` stanza, as they do in hblink3's `OUTBOUND` stanza, and are
+scoped to that one system — nothing here is shared and nothing is global.
+
+They are pure self-description. Nothing in the record affects routing,
+admission, or burst construction; an HBP `server` parses the same fields
+*from* its connecting clients for the dashboard and does nothing else
+with them.
+
+**A config error on any system that does not log in** — HBP `server`,
+`ipsc`, `obp`, `cc` — for the same reason bound-endpoint members reject
+fields they cannot use (D-07): a key that can never take effect should
+not be accepted.
+
+`colorcode` appears here and nowhere else. It is login metadata, never a
+burst input (D-28); constructed bursts use `dmr/`'s fixed tables.
+
+### 2.4 Keys are per-system, and validated against protocol and mode
+
+Every `[[system]]` stanza stands alone. Nothing in it is shared with
+another system and nothing is global — two HBP clients logging in to
+different servers carry two independent sets of login fields, and two
+IPSC systems carry two independent sets of mesh parameters.
+
+**A key that cannot take effect where it is written is a config error**,
+not a value quietly ignored. That is the same rule bound-endpoint members
+follow (D-07), applied to system stanzas: login self-description on a
+system that never logs in (§2.3), `master` on an IPSC master, a
+`tgid_ts*_acl` on anything but HBP (§5). The validator names the key and
+says which protocol or mode it belongs to.
+
+### 2.5 Mode names follow each protocol's real architecture
 
 | protocol | modes | why |
 |---|---|---|
@@ -181,17 +240,6 @@ uses `SERVER`/`OUTBOUND` for this reason; OmniLink says `server` and
 
 Residual `master`/`peer` naming for HBP survives in places across the
 family repos. It is wrong there too, and it is not carried forward here.
-
-### 2.3 `[system.announce]` — self-description, and nothing else
-
-HBP client mode and XLX send an RPTC configuration record at login:
-callsign, frequencies, power, location, and colour code. It is pure
-self-description, and an HBP server parses the same record from
-connecting repeaters for the dashboard. Nothing in it affects routing.
-
-`colorcode` lives **only** here. It is announcement metadata and never a
-burst input (D-28) — one key serving both purposes is how an RF-local
-parameter drifts into becoming a gate.
 
 ## 3. `rules.toml`
 
@@ -329,6 +377,8 @@ around rather than solved it. Specific messages the docs require:
   a bridge (§4).
 - An XLX `module` given as a number rather than a letter A–Z, with the
   letter that number would correspond to.
+- A login self-description key (§2.3) on a system that never logs in,
+  naming the key and saying which modes send an RPTC record.
 - A malformed ACL string, quoting the fragment that failed and restating
   that one ACL carries exactly one action.
 - A `tgid_ts*_acl` on a non-HBP system, saying that TGID ACLs limit
@@ -428,7 +478,7 @@ existing file and emits `rules.toml`:
   is exactly what §4 requires.
 - ACLs and system stanzas come across from `hblink.cfg` in the same pass.
   `MODE: SERVER` becomes `mode = "server"`, `MODE: OUTBOUND` becomes
-  `mode = "client"` (§2.4), and `MODE: OPENBRIDGE` becomes
+  `mode = "client"` (§2.5), and `MODE: OPENBRIDGE` becomes
   `protocol = "obp"`.
 
 **It reports what it cannot represent rather than guessing**, and its

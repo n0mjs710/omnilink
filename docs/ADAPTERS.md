@@ -447,7 +447,35 @@ so it is absent here in both directions (D-28).
   the IPSC loopback vector asserts on the LC as well as the AMBE bits
   (FRAME §6).
 
-### 5.1 The egress clock — the system's sole pacing exception (D-15)
+### 5.1 Per-system configuration
+
+IPSC carries more per-system state than any other adapter, and much of it
+is mode-dependent (CONFIG §2.2). None of it is shared: each `[[system]]`
+stanza stands alone.
+
+- **`radio_id` is ours, not a repeater's.** It is the ID this instance
+  presents on the mesh — the master node's ID in master mode, our
+  registered ID in peer mode — and it must be unique on that system.
+- **Authentication is IPSC HMAC-SHA1**, keyed by a value that must match
+  the repeater codeplug. Up to 40 hex characters, left-zero-padded.
+- **Keepalive timing is asymmetric.** In master mode the repeaters drive
+  their own keepalives and we only watchdog them; in peer mode we send
+  `MASTER_ALIVE_REQ` on `keepalive_interval` and re-register after
+  `keepalive_missed_max` misses. The watchdog should be set generously —
+  firewall timers vary and a false loss re-registers the whole session.
+- **Admission is two separate things.** Radio-ID admission is `reg_acl`,
+  the same key every registering system uses (§1.3). `peer_ip_acl` is
+  IPSC-only and restricts *source addresses*, which a radio-ID ACL cannot
+  express.
+- **An IPSC system holds at most 15 peers including the master**, so no
+  more than 14 can connect. That is a protocol limit, not a tunable, and
+  it bounds what one IPSC system can be.
+- **Capabilities are advertised at registration** and default to values
+  proven against real hardware (`use_safe_defaults`). Advertising
+  something we do not implement confuses repeaters, so the individual
+  flags are for someone with a wire capture and a reason.
+
+### 5.2 The egress clock — the system's sole pacing exception (D-15)
 
 The ipsc2hbpc jitter-buffer egress clock is retained. MOTOTRBO repeaters
 carry only a ~2-packet buffer, so timing must arrive correct, and
@@ -476,7 +504,7 @@ system**:
 
 Neither ever enters the core; both are IPSC wire machinery.
 
-### 5.2 No local repeat — IPSC is peer-to-peer (D-18)
+### 5.3 No local repeat — IPSC is peer-to-peer (D-18)
 
 Each IPSC peer replicates its own traffic to all other peers directly;
 the master role is only the peer-list bootstrap. Peers hear each other
@@ -493,6 +521,28 @@ monitor** — it serves the peer list, a legitimate role in a CG-NAT world
 where peers need a reachable master even though traffic flows
 peer-to-peer, and its unconditional ingress feeds the dashboard and log
 without routing anything. Zero additional code; a supported shape.
+
+### 5.4 Timeslot disagreement — the DMRlink confbridge workaround
+
+An IPSC `GROUP_VOICE` packet encodes the active timeslot **twice**:
+`call_info` byte 17 bit 5 for `VOICE_HEAD` and `VOICE_TERM`, and
+`burst_type` byte 30 bit 7 for voice bursts (`0x0A` = TS1, `0x8A` = TS2).
+Real Motorola hardware writes both consistently.
+
+DMRlink's `confbridge.py`, translating a call from TS1 to TS2, rewrites
+`call_info` but **not** `burst_type`. Voice bursts then route to the
+wrong timeslot: a phantom stream on one slot while the real call
+forwards only its header.
+
+- **Default (`ts_prefer_call_info = false`)**: trust `burst_type` for
+  voice bursts, which is the protocol-defined source, and log a warning
+  once per session per affected slot when the two disagree — so the
+  problem is visible rather than mysterious.
+- **`true`**: trust `call_info` for all burst types, working around the
+  incomplete rewrite without needing the far end updated.
+
+Ported from `ipsc2hbpc` as-is. Remove it if `confbridge.py` is ever fixed
+to rewrite both fields.
 
 ---
 

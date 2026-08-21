@@ -67,7 +67,7 @@ Check here before "fixing" one of these:
 - **HBP is `server`/`client`; IPSC is `master`/`peer`.** Not a style
   inconsistency — HBP is strictly client/server, IPSC is a real
   peer-to-peer mesh whose master just holds the bootstrap list. Do not
-  normalize them (CONFIG §2.4). `endpoint` is the neutral term where the
+  normalize them (CONFIG §2.5). `endpoint` is the neutral term where the
   core or event schema must span protocols.
 - **The core enforces no ACLs** (D-31). Adapters do, at ingress, by
   querying `acl.c`. TGID ACLs are HBP-only — they limit local repeat,
@@ -75,7 +75,7 @@ Check here before "fixing" one of these:
 - **A burst can carry a "wrong" colour code end to end.** Never read it,
   never rewrite it, build at CC 1 (D-28). `dmr/` needs no Golay(20,8)
   encoder; `xlx_slot_type()` is not ported; `colorcode` exists only in
-  `[system.announce]`.
+  a system's login self-description (CONFIG §2.3).
 
 ## Definition of done
 
