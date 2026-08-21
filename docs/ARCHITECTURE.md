@@ -2,8 +2,8 @@
 
 C11, single binary, **single thread**, zero external library dependencies
 (libc only — not even libpthread). This document defines the scope, the
-process model, the module boundaries, and the memory discipline. The
-frame it moves is in FRAME.md; what the core does with it is in
+process model, the module boundaries, and the memory discipline. What crosses the
+adapter/core boundary is in FRAME.md; what the core does with it is in
 ROUTING.md; how it is configured is in CONFIG.md.
 
 ## 1. Scope and sizing (D-20)
@@ -16,15 +16,13 @@ not performance.
 **Size against egress fan-out, not ingress.** One hundred systems
 carrying a generous 200 concurrent streams is roughly 3,400 frames/s
 arriving. That is not the work. The work is delivery: a 20-member bridge
-turns each ingress frame into 19 sends, and an HBP server locally
-repeating to 100 connected endpoints turns each frame into up to 100.
+turns each ingress packet into 19 sends, and an HBP server locally
+repeating to 100 connected clients turns each packet into up to 100.
 Realistic worst case is on the order of 10⁵ `sendto` calls per second —
 two orders of magnitude above the ingress figure, and still comfortably
-inside one core given microsecond-scale per-burst work and no per-frame
-allocation.
+inside one core given no per-packet allocation.
 
-Quote the fan-out number. The ingress number is not the one that matters,
-and quoting it invites a performance argument nobody needs to have.
+Size against the fan-out number, not the ingress number.
 
 ## 2. Process model: one thread, one loop
 
@@ -237,12 +235,11 @@ modules.
 | XLX | HBP client + module link + validation | **0.15–0.25 k** |
 | tests | ipsc2hbpc ships 298 lines, cc2obp 930; D-11 mandates three vector classes × five adapters, plus the parity suite | **2.0–3.0 k** |
 
-**≈8.5–11 kLOC plus ≈2–3 kLOC of tests.** Larger than a first pass
-suggests, and still inside the complexity class of ipsc2hbpc + cc2obp
-combined — which is the claim that matters. The two line items easiest to
-underestimate are the validator (specific messages with remedies for five
-protocols is 700–900 lines by itself) and the dynamic-rule engine, which
-looks like a flag and is a state machine with asymmetric triggers.
+**≈8.5–11 kLOC plus ≈2–3 kLOC of tests** — inside the complexity class of
+ipsc2hbpc + cc2obp combined. The two items easiest to underestimate are
+the validator (specific messages with remedies for five protocols is
+700–900 lines by itself) and the dynamic-rule engine, which looks like a
+flag and is a state machine with asymmetric triggers.
 
 ## 8. What is deliberately not here
 

@@ -47,12 +47,12 @@ ACLs keep their grammar, their layering, and their fail-closed behavior.
 migration tool ships with the gate that proves it.
 
 **MMDVM/HBP is the dominant traffic source, so it is the shape of the
-core.** Voice rides through as the 33-byte on-air DMR burst — the same
-bytes HBP and OpenBridge already put on the wire. HBP→HBP, HBP→OBP, and
-HBP→XLX therefore re-encode *nothing*. IPSC carries the same DMR
-material unpacked and re-packs it at its own edge. CC-CC — the only
-transport that carries bare AMBE with no burst or superframe data — is
-the one place anything is synthesized, and it is the shrinking case.
+core.** What moves between adapters is the DMRD packet itself, so
+HBP→HBP, HBP→OBP and HBP→XLX re-encode *nothing* — there is no internal
+format to convert to. IPSC carries the same DMR material unpacked and
+re-packs it at its own edge. CC-CC — the only transport carrying bare
+AMBE with no burst or superframe data — is the one place anything is
+synthesized, and it is the shrinking case.
 
 **OpenBridge is the trunk.** Instance-to-instance federation is OBP, not
 a bespoke protocol — it is the most efficient hop available and both ends
@@ -61,7 +61,7 @@ that helps.
 
 **c-Bridge conduits, XLX modules, and OpenBridge links stop being special
 cases.** All three carry their bridge identity in the *connection* rather
-than in the frame, and all three now use one member syntax where you
+than in the packet, and all three now use one member syntax where you
 write what is meaningful and omit what is not:
 
 ```toml
@@ -185,10 +185,10 @@ from day one, and each protocol's support is proven against live traffic
 
 ## The design documents
 
-For implementers and the deeply curious, in reading order:
+In reading order:
 
 1. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — scope, process model, modules, memory
-2. [`docs/FRAME.md`](docs/FRAME.md) — the byte-exact internal frame
+2. [`docs/FRAME.md`](docs/FRAME.md) — the DMRD packet, stream identity, the burst
 3. [`docs/ROUTING.md`](docs/ROUTING.md) — ACLs, bridges, dynamic rules, arbitration, hang, loops
 4. [`docs/CONFIG.md`](docs/CONFIG.md) — the two files, validation, live reload, migration
 5. [`docs/ADAPTERS.md`](docs/ADAPTERS.md) — per-protocol adapter specifications

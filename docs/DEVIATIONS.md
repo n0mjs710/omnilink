@@ -34,9 +34,9 @@ The previous corpus's entries were retired with it. Two of them had
 already been folded into the current documents and are noted here so the
 reasoning is not lost:
 
-- **The XLX module link is protocol machinery, not frame synthesis.** The
+- **The XLX module link is protocol machinery, not synthesis.** The
   five-frame link burst never becomes a routed stream and never enters the
-  core, so it does not violate "nothing synthesizes frames" — that rule
+  core, so it does not violate "synthesize nothing" — that rule
   governs fabricating call content into the routing path. Now stated
   directly in ADAPTERS.md §4.1 and D-14.
 - **`dmr/`'s slot-type, EMB, and sync tables are precomputed for colour

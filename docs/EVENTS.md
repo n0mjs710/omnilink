@@ -51,11 +51,11 @@ There are no bespoke "UI events," and there never will be. New visuals
 are backend work against the same vocabulary, which is what lets the C
 and Python sides evolve independently.
 
-**Events are keyed by `(origin_system, stream_tag)`.** A stream that is
-both locally repeated and bridged legitimately produces a `local:true`
-event from its adapter *and* one from the core, and the backend must fold
-them (D-17). A backend that does not will double-count every locally
-repeated call in last-heard.
+**Events are keyed by the stream tag** (FRAME §3), which is globally
+unique. A stream that is both locally repeated and bridged legitimately
+produces a `local:true` event from its adapter *and* one from the core,
+and the backend must fold them on that tag (D-17) or last-heard
+double-counts every locally repeated call.
 
 ## 3. Flow
 
@@ -104,7 +104,7 @@ fields.** Plane: S = systems, B = bridge, G = global.
 | `startup`, `shutdown` | G | version, config summary | core |
 | `system_up`, `system_down` | S | | core, via `nx_core_system_state` |
 | `endpoint_connected`, `endpoint_lost` | S | id, callsign if known, address, `kind` (§4.1), endpoint class | adapters |
-| `call_start` | B+S+G | bridge(s), or `local:true`; src; dst; origin system/endpoint/slot; stream key; unit and headerless flags; **members forwarded to** (intent) | core; adapters for local repeat |
+| `call_start` | B+S+G | bridge(s), or `local:true`; src; dst; origin system/repeater/slot; stream tag; originating wire `stream_id` (FRAME §3.1); unit and headerless markers; **members forwarded to** (intent) | core; adapters for local repeat |
 | `call_end` | B+S+G | + `duration_s`, `frames`, `reason` (`term`\|`timeout`) | core; adapters for local |
 | `stream_contention` | B | bridge, loser src/system, holder src/system, `same_src` flag (D-19) | core |
 | `loop_suspected` | B | bridge, src, systems involved, capture count and gaps — **alarm class**, surface prominently (D-19) | core |

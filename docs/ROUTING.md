@@ -1,105 +1,86 @@
 # ROUTING.md — Routing Core Semantics
 
-The core owns the bridge table, the ACL layer, the active-stream table,
-per-bridge talker arbitration, the dynamic-rule engine, and the event
-bus. It knows nothing about any protocol, FEC, peers-as-sockets, pacing,
-or wire framing. Everything in this file happens in the core module, on
-the daemon's single thread (ARCHITECTURE.md §2).
+The core owns the bridge table, the ACL layer, the stream table,
+per-bridge arbitration, the dynamic-rule engine, and the event bus. It
+reads the DMRD header and the `bits` byte (FRAME §2) and knows nothing
+else about any protocol: no FEC, no framing, no sockets, no slot state,
+no pacing.
 
 **hblink3 is the specification** (D-03). Where this document is silent,
-hblink3's `bridge.py` behavior is the answer. Where OmniLink departs
-from it, the departure is called out explicitly and marked
-**[departure]**; there are three — §3.1, §4.3, and §5.1.
+`bridge.py` is the answer. Departures are marked **[departure]**; there
+are three — §3.1, §4.3, §5.1.
 
 ## 1. Vocabulary
 
-- **System** — **the set of endpoints that hear each other without the
-  router.** One `[[system]]` stanza; immutable after startup (D-09);
-  indexed by a `uint16_t` used as `origin_system` in the frame.
+- **System** — the set of endpoints that hear each other without the
+  router. One `[[system]]` stanza; immutable after startup; indexed by a
+  `uint16_t`.
 
-  The word comes from IPSC, where a *system* is the peer-to-peer mesh
-  itself — peers hear each other directly and the router is not in that
-  path. It carries to HBP as a server and the clients connected to it,
-  which hear each other through that server's local repeat. Same
-  meaning, different mechanism, which is exactly why local repeat is an
-  adapter duty on HBP and does not exist on IPSC (D-18).
-
-  Bound endpoints (OBP, CC-CC, XLX) are the degenerate case: one
-  connection, nothing to circulate. That is the same fact D-07 describes
-  from the other side.
-- **Bridge** — a named conference, and the unit of routing. A bridge is
-  the *only* way traffic moves between systems.
+  The term comes from IPSC, where a system *is* the peer-to-peer mesh. It
+  carries to HBP as a server and its connected clients, which hear each
+  other through that server's local repeat. Same meaning, different
+  mechanism — which is why local repeat is an HBP adapter duty and does
+  not exist on IPSC (D-18). Bound endpoints are the degenerate case: one
+  connection, nothing to circulate.
+- **Bridge** — a named conference, and the unit of routing. The only way
+  traffic moves between systems.
 - **Member** — one system's participation in one bridge:
-  `(system, slot, tgid)` plus its dynamic-rule state. Members live in
-  the reloadable rules table (D-09).
-- **Stream** — one transmission, keyed `(origin_system, stream_tag)`,
-  bounded by a voice header … terminator, or by timeout.
-- **Endpoint** — a device below a system: a client (repeater or hotspot)
-  on an HBP server, a peer on an IPSC network. The neutral cross-protocol
-  term; each protocol's own term is used when speaking about that
-  protocol (ADAPTERS.md §2). The core routes to *members*, never to
-  endpoints (§5).
+  `(system, slot, tgid)` plus dynamic-rule state. Members live in the
+  reloadable rules table.
+- **Stream** — one transmission, keyed by its tag (FRAME §3), bounded by
+  a voice header … terminator, or by timeout.
+- **Endpoint** — a device below a system: a client on an HBP server, a
+  peer on an IPSC network. The neutral term used where the core must span
+  protocols. The core routes to *members*, never to endpoints.
 
 ## 2. Ingress
 
-**Ingress is unconditional.** Adapters forward every stream to the core —
-including streams also delivered in-system by local repeat (D-18) and
-streams that match no bridge at all. An unmatched stream still feeds the
-unit route cache (§6) and emits a rate-limited `unbridged` event before
-being dropped.
+**Ingress is unconditional.** Adapters forward every stream to the core,
+including streams local repeat also delivered in-system and streams that
+match no bridge. An unmatched stream still feeds the unit route cache
+(§6) and emits a rate-limited `unbridged` event before being dropped.
 
-This matters more than it looks: it is what makes the core's view
-complete, and therefore what makes the unified dashboard, the accounting,
-and the route cache trustworthy. A router that only sees the traffic it
-routes cannot tell an operator what their network is doing.
+A router that sees only the traffic it routes cannot tell an operator
+what their network is doing, and the dashboard, accounting, and route
+cache would all be lying.
 
-### 2.1 ACL admission (D-12)
+### 2.1 ACL admission
 
-Every ingress traffic frame passes the ACL layer before anything else.
-The model is hblink3's exactly, because operators' existing ACL strings
-must keep meaning what they meant.
+Every ingress packet passes the ACL layer before anything else. The model
+is hblink3's exactly (D-12), because operators' existing ACL strings must
+keep meaning what they meant.
 
-**Grammar.** One string, one action: `PERMIT:` or `DENY:` followed by a
-list of IDs and/or inclusive ranges, or the keyword `ALL`. There is
-exactly one ACTION per ACL — mixing permit and deny within one string is
-not expressible and is a config error. An ACL simultaneously defines the
-action for the IDs it lists **and the opposite action for every ID it
-does not**; that second half is the part operators get wrong, and the
-validator's error text says so.
+**Grammar.** One string, one action: `PERMIT:` or `DENY:` followed by IDs
+and/or inclusive ranges, or `ALL`. Exactly one action per ACL — mixing is
+not expressible and is a config error.
 
-**The four types.**
+An ACL defines the action for the IDs it lists **and the opposite action
+for every ID it does not**. That second half is the part operators get
+wrong, and the validator's error text says so.
 
-| ACL | Applies to | Range | Notes |
+| ACL | applies to | range | notes |
 |---|---|---|---|
-| `reg_acl` | endpoint registration (login) | 1 … 4294967295 | HBP server-mode and IPSC master-mode systems only; outbound links and OBP accept no registrations. **Always enforced** — `use_acl` cannot disable it. |
-| `sub_acl` | source radio ID of a call | 1 … 16776415 | every voice and data stream |
+| `reg_acl` | endpoint registration (login) | 1 … 4294967295 | HBP server and IPSC master systems only; outbound links and OBP accept no registrations. **Always enforced** — `use_acl` cannot disable it. |
+| `sub_acl` | source radio ID | 1 … 16776415 | every voice and data stream |
 | `tgid_ts1_acl` | destination TGID on slot 1 | 1 … 16776415 | |
 | `tgid_ts2_acl` | destination TGID on slot 2 | 1 … 16776415 | |
 
-**Order of enforcement**, first denial wins, all must pass:
-
-1. global `sub_acl`
-2. global `tgid_ts1_acl` / `tgid_ts2_acl`, selected by the stream's slot
-3. system `sub_acl`
-4. system `tgid_ts1_acl` / `tgid_ts2_acl`
-
-Registration is separately gated: global `reg_acl` **and** system
-`reg_acl` must both permit the endpoint or the login is refused.
+**Order**, first denial wins, all must pass: global `sub_acl` → global
+`tgid_ts*_acl` (selected by the stream's slot) → system `sub_acl` →
+system `tgid_ts*_acl`. Registration is separately gated: global **and**
+system `reg_acl` must both permit, or the login is refused.
 
 **Fail closed.** A malformed ACL is a startup or reload failure, never a
-silently-ignored ACL. hblink3 exits at startup on `ACL CREATION ERROR`
-and that is correct; OmniLink refuses to start, or — on reload — refuses
-the swap and keeps the previous rules (D-09).
+silently-ignored ACL.
 
-**OpenBridge rider.** OBP systems do not register, so `reg_acl` does not
-apply, and all OBP traffic is carried on slot 1 — so the **global
-`tgid_ts1_acl`** is the control that governs it. Documentation must say
-this plainly; an operator who filters OBP traffic with `tgid_ts2_acl` has
-built a filter that can never fire.
+**OpenBridge rider.** OBP systems do not register, and all OBP traffic is
+carried on slot 1, so the **global `tgid_ts1_acl`** is the control that
+governs it. An operator who filters OBP traffic with `tgid_ts2_acl` has
+built a filter that can never fire; the documentation must say so.
 
-ACL denials emit rate-limited events (`acl_denied` with the ACL that
-fired), because an ACL that silently eats traffic is the hardest class of
-misconfiguration to diagnose.
+Denials emit rate-limited `acl_denied` events naming the ACL that fired.
+An ACL that silently eats traffic is the hardest misconfiguration to
+diagnose.
 
 ### 2.2 Bridge lookup
 
@@ -108,122 +89,92 @@ BRIDGE_SRC_INDEX[(system u16, slot u8, tgid u32)] -> member list
 ```
 
 Built once per rules load, each entry carrying its bridge back-pointer
-and its sibling member list. This is hblink3's index exactly, including
-that the value is a **list**: one ingress stream may match several
-bridges, and it is routed into every one of them (D-04).
+and sibling member list. The value is a **list**: one ingress stream may
+match several bridges and is routed into every one (D-04).
 
-Two gates apply, and both are hblink3's:
+Two gates, both hblink3's:
 
-- The matched **source member** must be `active` (§4). An inactive
-  source member routes nothing.
-- Each **target member** must be `active`, and must not belong to the
-  origin system. Loop prevention here is by *system*, not by member — a
-  bridge containing two members on one system never delivers back into
-  that system, which is what makes a same-system TS1↔TS2 bridge entry
-  safe to write.
+- The matched **source member** must be `active` (§4).
+- Each **target member** must be `active` and must not belong to the
+  origin system. Loop prevention here is by *system*, not by member,
+  which is what makes a same-system TS1↔TS2 bridge entry safe to write.
 
-Egress rewrites `dst_id` to the target member's TGID and hands the
-adapter the target's `(tgid, slot)` as its delivery parameters. The
-adapter is *told* where to put the traffic; it never looks it up (D-21).
+The core hands each surviving target's `(tgid, slot, endpoint)` to its
+adapter as delivery parameters. **The core does not modify the packet**
+— the adapter rewrites the destination, in the header and the LC
+together, when it copies (FRAME §4.1).
 
 ## 3. Stream lifecycle
 
-State per active stream, from a fixed pool sized `max_streams`
-(default 200, sized to the D-20 ceiling and not below it):
+State per active stream, from a fixed pool sized `max_streams` (default
+200, sized to the D-20 ceiling and not below it):
 
 ```
-key(origin_system, stream_tag), bridges_held[], src_id, dst_id, slot,
-flags, lc[9], t_start, t_last_frame, frames_forwarded, frames_dropped,
+tag, delivery_set[], bridges_held[], origin_system, src_id, dst_id, slot,
+t_start, t_last_packet, packets_forwarded, packets_dropped,
 rules_generation, state
 ```
 
-- **Stream open — any traffic frame** with an unknown key opens a
-  stream. A real voice header when the origin delivered one; a bare
-  VOICE frame on late entry, in which case the stream is headerless and
-  flows headerless end to end (D-14). The precomputed LC is built here,
-  once, and reused for every retarget (§7).
-- Bridge lookup runs, arbitration is attempted per matched bridge (§5),
-  and the stream records which bridges it holds. At least one hold →
-  ACTIVE, forward, emit `call_start` naming the members forwarded to and
-  noting headerless where true. No holds → CONTENDED: record it, forward
-  nothing, emit `stream_contention` **once**; subsequent frames of a
-  CONTENDED stream are dropped silently. One log line per lost call, not
-  fifty.
-- **Traffic on an ACTIVE stream** — VOICE, plus unknown in-stream types
-  per FRAME.md §2 — updates `t_last_frame` and forwards to the held
-  bridges' members.
-- **A real terminator**: forward, fire deactivation triggers
-  (§4), release every held bridge, emit `call_end` with duration, frame
-  counts, and reason, free the slot.
+- **Stream open — any traffic packet** with an unknown tag. A real voice
+  header when the origin delivered one; a bare voice burst on late entry,
+  in which case the stream is headerless and flows headerless end to end
+  (D-14).
+- Activation triggers fire (§4.2), then bridge lookup runs, then
+  arbitration is attempted per matched bridge (§5.1), then the delivery
+  set is resolved (§3.1). At least one hold → ACTIVE, forward, emit
+  `call_start`. No holds → CONTENDED: record it, forward nothing, emit
+  `stream_contention` **once**; later packets of a CONTENDED stream are
+  dropped silently. One log line per lost call, not fifty.
+- **Traffic on an ACTIVE stream** updates `t_last_packet` and forwards to
+  the delivery set.
+- **A real terminator**: forward, fire deactivation triggers (§4.3),
+  release every held bridge, emit `call_end`, free the slot.
 - **Timeout.** The core scans the pool on a 500 ms timer;
-  `now - t_last_frame > stream_timeout` (default 2.0 s) frees the slot,
-  releases the bridges, emits `call_end` with `reason=timeout` — and
-  sends **nothing** downstream (D-14). Adapters likewise never
-  synthesize terminators into the routing path; ingress expires its
-  `stream_tag` mappings silently and egress expires per-stream state on
-  its own inactivity timer.
-
-### 3.1 The delivery set is resolved once, and only grows **[departure]**
-
-When a stream opens, the core resolves its delivery set — the members it
-will be forwarded to — and caches it against the stream. Subsequent
-frames replay that set rather than re-deriving it. hblink3 re-derives per
-packet; this does not.
-
-**Removals are not applied to a stream in flight.** A member that goes
-inactive mid-transmission keeps receiving until the call ends. Cutting a
-transmission off mid-word because a timer expired has no RF analog
-(D-13), and the far end would get a call with no terminator for no
-reason.
-
-**Additions are applied immediately.** A member that becomes active
-mid-transmission is added to every in-flight stream on its bridges, and
-begins receiving as a headerless late entry. This is not symmetry for its
-own sake — it is what tells an operator the bridge is busy:
-
-> KANSAS has a call in progress. WEST is not an active member. A user on
-> WEST keys the trigger TGID to bring WEST in. Their own transmission is
-> refused, because KANSAS is held. If WEST were not spliced into the call
-> already running, that user would hear silence, conclude the bridge is
-> idle, key up and talk — and be dropped again, with no indication that
-> nobody heard them.
-
-Splicing them in reproduces the RF behavior exactly: they unkey into the
-middle of someone else's transmission and know to wait. A channel that is
-silent but busy is an IP-only failure mode, which is precisely where
-D-13 says to intervene.
-
-So: **a stream's delivery set never shrinks during its lifetime.**
-
-Ordering, at call start: fire activation triggers (§4.2) **first**, then
-resolve the delivery set — so the transmission that brings a member in is
-itself delivered to it.
-
-Resolving once also makes the `call_start` event honest. It publishes the
-members a stream was forwarded to as delivery intent (D-17), and under
-per-packet re-derivation that list is a snapshot at frame one that can
-quietly stop being true. Resolved once and grow-only, it is a floor: every
-member listed did receive the call, and any member added later is evented
-separately.
+  `now - t_last_packet > stream_timeout` (default 2.0 s) frees the slot,
+  releases the bridges, fires deactivation triggers (§4.3, D-30), emits
+  `call_end` with `reason=timeout` — and sends **nothing** downstream
+  (D-14).
 
 **`rules_generation`** pins the stream to the rules arena it opened
-under, so a reload mid-call cannot pull a bridge or member out from under
-an in-flight transmission (D-09, D-23).
+under, so a reload mid-call cannot pull a member out from under a live
+transmission (D-09).
 
-**Pool exhaustion** (D-23) — refuse the new arrival, never evict a live
-one, emit a rate-limited event, keep running:
+**Pool exhaustion** — refuse the new arrival, never evict a live one,
+emit a rate-limited event, keep running (D-23):
 
 | pool | limit | on exhaustion |
 |---|---|---|
-| core stream table | `max_streams` (200) | drop the opening frame, `stream_pool_full` |
+| core stream table | `max_streams` (200) | drop the opening packet, `stream_pool_full` |
 | unit route cache | `unit_cache_max` (4096) | LRU-evict oldest (§6) |
 | per-peer stream pool (OBP) | per-adapter config | drop, `stream_pool_full` with system + peer |
 
-## 4. Dynamic rules (D-12)
+### 3.1 The delivery set is resolved once, and only grows **[departure]**
+
+The delivery set — the members a stream is forwarded to — is resolved at
+stream open and cached against the tag. Later packets replay it rather
+than re-deriving. hblink3 re-derives per packet (D-29).
+
+- **Removals are not applied in flight.** A member going inactive
+  mid-transmission keeps receiving until the call ends.
+- **Additions are applied immediately.** A member becoming active
+  mid-transmission is added to every in-flight stream on its bridges and
+  begins receiving as a headerless late entry.
+
+> KANSAS has a call in progress and WEST is not an active member. A user
+> on WEST keys the trigger TGID to bring WEST in. Their own transmission
+> is refused, because KANSAS is held. Splice WEST into the call already
+> running and they unkey into the middle of someone else's transmission
+> and know to wait. Do not, and they hear silence, conclude the bridge is
+> idle, key up and talk, and are dropped again with no indication that
+> nobody heard them.
+
+So: **a stream's delivery set never shrinks during its lifetime.**
+
+## 4. Dynamic rules
 
 Per-member state, reproducing hblink3's engine including its asymmetries.
-These are not conveniences layered on top of routing; they *are* routing,
-and they are built in phase 1.
+These are not conveniences layered on routing; they *are* routing, and
+they are built in phase 1 (D-12).
 
 ```
 active   bool      # gates ingress and egress (§2.2)
@@ -239,55 +190,46 @@ reset[]  trigger TGIDs that reset its timer without changing state
 otherwise `timer = now`.
 
 **Bound endpoints carry no trigger state.** An `obp`, `cc`, or `xlx`
-member loads with `to_type = NONE` and empty trigger lists, and the
-validator rejects any attempt to configure otherwise (CONFIG §4): a
-trunk, conduit, or reflector link has no user to key a trigger TGID, and
-§4.2–§4.3 only ever act on members of the originating system. Such
-members are never visited by the sweep in §4.4. Their `active` flag
-still works and is still operator-controllable (§4.5).
+member loads with `to_type = NONE` and empty lists, and the validator
+rejects any attempt to configure otherwise (CONFIG §4). A trunk, conduit,
+or reflector link has no user to key a trigger TGID, and §4.2–§4.3 only
+act on members of the originating system, so nothing could fire them.
+Such members are never visited by the sweep. Their `active` flag still
+works and is still operator-controllable (§4.5).
 
-### 4.1 Trigger timing is asymmetric, and deliberately so
+### 4.1 Trigger timing is asymmetric
 
-**Activation triggers fire at call start, so that the operator's
-identification is not truncated.**
-
-The common configuration has the trigger TGID equal to the member's
+**Activation fires at call start, so the operator's identification is not
+truncated.** The common configuration has trigger TGID equal to member
 TGID — trigger on 314, talk on 314. An operator brings the bridge up the
-way operators actually do it: they key up and say "N0XYZ monitoring."
-Firing activation at call start means that transmission passes through
-and the bridge hears who just arrived. Firing it at unkey would eat the
-entire transmission, and nobody would know N0XYZ is there.
+way operators actually do: they key up and say "N0XYZ monitoring."
+Firing at call start passes that transmission through, and the bridge
+hears who arrived. Firing at unkey would eat it entirely.
 
-This is not an FCC identification question — the repeater identifies
-itself — it is the human convention, and it is the one that matters
-operationally.
+Not an FCC identification question — the repeater identifies itself — but
+the human convention, which is the one that matters operationally.
 
-The design principle generalizes: **kerchunking is poor form and it
-exists, but addressing it here would break the polite operator's
-standard procedure.** Optimize for correct operating practice, not
-against incorrect practice.
+The principle generalizes: **kerchunking is poor form and it exists, but
+addressing it here would break the polite operator's standard procedure.**
+Optimize for correct operating practice, not against incorrect practice.
 
-The concern that activation-on-start lets kerchunks flood the routing
-system mostly does not apply, because routing is by TGID. A trigger on a
-TGID that no member carries fires the trigger and then finds no bridge
-member to route to, so it goes nowhere. The only case that forwards is
-trigger-TGID equals member-TGID — which is the case above, where
-forwarding it is the entire point.
+The concern that this lets kerchunks flood the routing system mostly
+cannot apply, because routing is by TGID: a trigger on a TGID no member
+carries fires the trigger and then finds nothing to route to. The only
+case that forwards is trigger-TGID equals member-TGID, which is the case
+above.
 
-**Deactivation triggers fire on call end**, for the mirror reason: a
-transmission that tears the bridge down should itself complete first.
+**Deactivation fires at call end**, for the mirror reason: a transmission
+that tears the bridge down should complete first.
 
 Both are in-band signalling and have nothing to do with routing that
-frame. Implementations must keep the two paths distinct.
+packet. Keep the two paths distinct.
 
 **Triggers fire even when the triggering stream is itself dropped.** A
-stream that loses arbitration (§5.1) forwards nothing, but its triggers
-still run. This is the case that matters: an operator keying up to bring
-a bridge in while that bridge is already busy gets their own
-transmission refused, and the activation must still happen — otherwise
-they hear nothing, assume the bridge is idle, and are dropped again
-(§3.1). Skipping trigger processing for a dropped stream is a plausible
-"optimization" and it breaks exactly this.
+stream that loses arbitration forwards nothing, but its triggers still
+run — that is exactly the §3.1 case, where an operator keys up to bring a
+bridge in while it is already busy. Skipping trigger processing for a
+dropped stream is a plausible optimization and it breaks this.
 
 ### 4.2 At call start, for each member of the origin system
 
@@ -302,16 +244,12 @@ Matching requires `slot == member.slot`. For each member where
 - Then, if the member is active and `to_type == ON`, reset
   `timer = pkt_time + timeout`.
 
-### 4.3 On call end, for each member of the origin system
+### 4.3 At call end, for each member of the origin system
 
 Matching requires `slot == member.slot`.
 
-**"Call end" here means end of stream from any cause — a real terminator
-or a timeout. [departure]** hblink3 fires these only inside its
-real-terminator branch, so a stream whose terminator is lost never tears
-its bridge down. DMR loses terminators routinely — that is why stream
-timeout exists at all — and a bridge the operator asked to drop should
-drop whether or not their last burst survived the path.
+**"Call end" means end of stream from any cause — a real terminator or a
+timeout. [departure]** (D-30.)
 
 - **Traffic on the member's own TGID resets its timer.** If
   `dst_id == member.tgid` and either (`to_type == ON` and active) or
@@ -319,8 +257,7 @@ drop whether or not their last burst survived the path.
   what makes "stays up while people are talking on it" work.
 - For each member where `dst_id ∈ member.off ∪ member.reset`:
   - If `dst_id ∈ member.off` and the member is active: clear `active`,
-    emit a bridge-state event, and if `to_type == ON` cancel the timer
-    (`timer = pkt_time`).
+    emit a bridge-state event, and if `to_type == ON` cancel the timer.
   - If the member is now inactive and `to_type == OFF`, reset
     `timer = pkt_time + timeout`.
   - If the member is still active, `to_type == ON`, and
@@ -329,179 +266,159 @@ drop whether or not their last burst survived the path.
 ### 4.4 The timer sweep
 
 Runs on a **10 s** period (hblink3's `run_periodic(10, rule_timer_loop)`;
-its "run every minute" comment is stale — match the code, not the
-comment).
+its "run every minute" comment is stale — match the code).
 
-- `to_type == ON` and active and `timer < now`: **deactivate** — *unless
-  a call is in progress on that member's `(system, slot)` whose RX TGID
-  equals the member's TGID*, in which case defer by extending
+- `to_type == ON`, active, `timer < now`: **deactivate** — *unless a call
+  is in progress on that member's `(system, slot)` whose RX TGID equals
+  the member's TGID*, in which case defer by extending
   `timer = now + timeout` and emit a deferral event. Timing a bridge out
-  from under a live conversation is the single most user-visible way to
-  get this wrong.
-- `to_type == OFF` and inactive and `timer < now`: **activate**.
-- `to_type == NONE`: never touched by the sweep.
+  from under a live conversation is the most user-visible way to get this
+  wrong.
+- `to_type == OFF`, inactive, `timer < now`: **activate**.
+- `to_type == NONE`: never touched.
 
-Any state change emits a bridge-state event so the dashboard reflects it
-immediately; the periodic snapshot covers the rest, so a no-op sweep
-pushes nothing (D-10).
+The deferral checks the member's own **RX** state, so it protects the
+member where the RF user is talking, not members receiving bridged
+traffic — which is one of the ways a delivery set can change mid-stream
+(§3.1).
+
+Any state change emits a bridge-state event; a no-op sweep pushes
+nothing.
 
 ### 4.5 Operator control
 
-The control socket (D-10) can `enable` and `disable` a member or a whole
-bridge at runtime. That is the same `active` flag the trigger engine
-drives — one mechanism, two drivers — and an operator override is
-reported on the event bus like any other state change. A `disable`
-persists only until the next reload or restart; the file is the source of
-truth (D-09).
+The control socket can `enable` and `disable` a member or a whole bridge
+at runtime — the same `active` flag the trigger engine drives, one
+mechanism with two drivers. An override is evented like any other state
+change and persists only until the next reload or restart; the file is
+the source of truth.
 
 ## 5. Arbitration, slots, and hang time
 
 ### 5.1 Per-bridge talker holder **[departure]**
 
-Exactly one stream holds a bridge at a time. This is OmniLink's one
-deliberate departure from hblink3 (D-16): hblink3 arbitrates only at the
-target `(system, slot)`, which is complete for slotted targets and leaves
-unslotted members — OBP, CC, XLX — with no contention control at all, so
-two sources on one bridge interleave into one conference.
+Exactly one stream holds a bridge at a time (D-16).
 
 - **Acquire** when the stream opens, per matched bridge. A stream
-  matching several bridges (D-04) takes what it can get and forwards to
-  the bridges it holds; bridges it was refused are noted in the
-  `stream_contention` event.
+  matching several bridges takes what it can get and forwards to the
+  bridges it holds; refusals are noted in the `stream_contention` event.
 - **Release** at call end or timeout, immediately and unconditionally.
 - **No queueing.** DMR has no floor control. A refused stream is reported
   and discarded, and if the holder ends mid-contender the contender stays
   lost — its call start has already passed and streams are never spliced
   mid-call. Both ancestors behave this way.
-- **No hang time on a bridge, ever.** The full reasoning is in D-16 and
-  it is not a nuance: a per-bridge hang timer would refuse *every*
-  contender, because every contender on a bridge is same-talkgroup by
-  construction. A round-table net would lose every second station.
+- **No hang time on a bridge, ever** (D-16).
 
 ### 5.2 Slot arbitration and hang live at the adapter
 
-For each egress member on a slotted protocol the member config carries
-`slot`. The core stamps nothing — the egress **adapter** owns all slot
-truth (D-17), because an HBP or IPSC system carries local in-system
-traffic that occupies slots without ever transiting the core.
+The egress adapter owns all slot truth (D-17), because an HBP or IPSC
+system carries local traffic that occupies slots without transiting the
+core.
 
-- Per `(system, slot)` the adapter tracks the current outbound stream. If
-  two bridges egress to one `(system, slot)` concurrently, the first
-  wins and the second is dropped with a `slot_busy` event. This
-  contention is invisible to the core by design.
+- Per `(system, slot)` the adapter tracks the current outbound stream.
+  Two bridges egressing to one `(system, slot)` concurrently: first wins,
+  second is dropped with `slot_busy`. Invisible to the core by design.
 - **Hang time lives here and only here.** Per `(system, slot)` the
   adapter keeps `hang_tgid`, `hang_src`, `hang_until`; on stream end it
   sets `hang_until = now + system.group_hangtime` (default 4.0 s, 0
-  disables). Admission during hang is the D-16 table, whose middle rows
-  are the ones that matter: **same TGID from any source is admitted**,
-  and **same source on a different TGID is admitted**. Only a different
-  talkgroup from a different source is refused.
+  disables). Admission during hang:
+
+  | contender | admitted? | why |
+  |---|---|---|
+  | same TGID, any source | **yes** | the conversation the hang protects |
+  | same source, different TGID | **yes** | one user switching talkgroups |
+  | different TGID, different source | **no** — `slot_busy` | a foreign talkgroup seizing a held channel |
+
+  Getting the second row wrong locks out the net.
 - **The contention horizon is a separate timer from stream timeout.** A
-  stream whose frames simply stop must free its slot fast enough that the
-  next talker is not refused: the adapter releases a silent outbound
-  stream after `stream_to` (default **0.36 s**, hblink3's `STREAM_TO`),
-  well before the core's 2.0 s `stream_timeout` frees core-side state.
-  Two timers, two jobs. Conflating them holds a slot for two seconds
-  after every dropped stream.
-- Unslotted egress has no such arbitration; OBP carries many concurrent
-  talkgroups natively and its wire slot field is fixed at 1 by
-  convention.
-- **Local traffic ties down slots too**, participates in slot
-  arbitration exactly like core egress, and is reported on the event bus
-  tagged `local:true` (D-17).
+  stream whose packets stop must free its slot fast enough that the next
+  talker is not refused: the adapter releases a silent outbound stream
+  after `stream_to` (default **0.36 s**, hblink3's `STREAM_TO`), well
+  before the core's 2.0 s `stream_timeout`. Two timers, two jobs;
+  conflating them holds a slot for two seconds after every dropped
+  stream.
+- Unslotted egress has no such arbitration.
+- **Local traffic ties down slots too**, participates in the same
+  arbitration state, and is evented `local:true` (D-17).
 
 ### 5.3 Delivery filtering happens below the member level
 
-Within an HBP system, a repeater's subscription (D-03) may decline
-delivery of traffic the core routed to that system. That is a limiter at
-the edge, invisible to the core, which routes to **members** — that is,
-to systems — and never to endpoints. Bridge rules remain the sole
-routing authority; a subscription can only narrow what a system already
-carries.
+A repeater's subscription may decline delivery of traffic the core routed
+to its system (D-03). That is a limiter at the edge, invisible to the
+core, which routes to **members** — systems — and never to endpoints.
+Bridge rules remain the sole routing authority; a subscription can only
+narrow what a system already carries.
 
 ## 6. Unit (private) calls — target route cache (phase 6)
 
-hblink4's `user_cache.py` is the reference, promoted from per-server to
-core-wide (D-26).
+hblink4's `user_cache.py` is the reference, promoted core-wide (D-26).
 
 ```
 src_id -> { system, endpoint, slot, last_tgid, last_heard }
 ```
 
-- Fed passively from **every** ingress traffic packet — headers and
-  VOICE alike, so a long transmission keeps its talker routable — using
-  metadata the frame already carries. No adapter cooperation required
-  beyond honest metadata.
+- Fed passively from **every** ingress traffic packet — headers and voice
+  bursts alike, so a long transmission keeps its talker routable.
 - Entry timeout `unit_cache_timeout` (default 600 s); fixed pool, LRU
-  eviction at `unit_cache_max` (default 4096); swept on the core
-  housekeeping timer.
-- Routing a `UNIT` stream: look up `dst_id`. **Hit** → forward to that
-  one system with the cached endpoint and slot as delivery parameters and
-  `tgid = dst_id` unchanged. That struct is the only path by which a
-  remembered slot reaches an adapter, and it travels as a delivery
-  parameter, never as a routing key. **Miss or expired** → drop, emit
-  `unit_no_route`. Never flooded.
+  eviction at `unit_cache_max` (default 4096); swept on the 10 s tick.
+- Routing a unit stream: look up `dst_id`. **Hit** → forward to that one
+  system with the cached endpoint and slot as delivery parameters and
+  `tgid = dst_id` unchanged. That is the only path by which a remembered
+  slot reaches an adapter, and it travels as a delivery parameter, never
+  as a routing key. **Miss or expired** → drop, emit `unit_no_route`.
+  Never flooded.
 - Bridges are not consulted and §5.1 does not apply; unit streams contend
-  only at the egress edge. Loop safety comes from single-target
-  forwarding plus §7.
-- Bound endpoints (OBP aside) are rejected as unit targets at rules load
-  (D-07).
-- The cache also backs the dashboard's last-heard view, so it earns its
-  memory twice.
+  only at the egress edge.
+- CC-CC and XLX are rejected as unit targets at rules load (D-07).
+- The cache also backs the dashboard's last-heard view.
 
-Until phase 6: `UNIT` streams drop with an event.
+Until phase 6: unit streams drop with an event.
 
 ## 7. LC coherence on retarget
 
-Source and destination appear **twice** — in the frame header and inside
+Source and destination appear **twice** — in the DMRD header and inside
 the Link Control — and every retarget must keep them in agreement. A
-mismatch is inaudible to every test that does not decode audio, and
-wrong on the air.
+mismatch is inaudible to every test that does not decode audio, and wrong
+on the air.
 
 This is a property of DMR routing, not of one protocol: HBP carries the
-LC inside the burst (D-05), and IPSC carries a DMR LC of its own that
-dmrlink3 rewrites in place on retarget. Both hit the same rule.
+LC inside the burst and IPSC carries a DMR LC of its own that dmrlink3
+rewrites in place.
 
-The rule: **build the stream's LC once, at stream open, and splice it on
-every egress with the target member's TGID.** hblink3 does exactly this
-(`STATUS[slot]['RX_LC']`, built from the voice header when one arrived
-and synthesized from the HBP header when the stream was headerless) and
-that is the reference implementation. Never re-derive the LC per frame,
-and never let the header and the LC be rewritten by different code paths.
+**The egress adapter owns this**, because it is the component that copies
+the packet (FRAME §4.1). Generate the replacement LCs once per stream per
+target and splice per burst by position; never re-derive per packet, and
+never let the header and the LC be rewritten by different code paths.
+hblink3's `gen_lcs()` / `embed_lc()` pair is the reference.
 
-This is a standing bug class, not a one-time task. It is why every
-adapter owes a loopback-identity conformance vector (D-11, FRAME.md §6).
+A standing bug class, not a one-time task, and the reason every adapter
+owes a loopback-identity vector (D-11, FRAME §6).
 
-## 8. Loop prevention (D-19)
+## 8. Loop prevention
 
-1. **Never forward a frame to its origin system.** Structural, in the
+1. **Never forward a packet to its origin system.** Structural, in the
    core, by system rather than by member.
 2. **Edge dedupe.** The OBP adapter drops re-received copies of a stream
-   it is already handling, per-peer by stream ID — the common reflection
-   case, caught where it happens.
-3. **Same `(src, dst)` is not loop evidence.** Hams share one radio ID
-   across their radios, so same-source same-TG streams in overlap are
-   ordinary contention: arbitration drops the newcomer and the
-   `stream_contention` event notes `same_src: true`. Honest data, no
-   inference.
-4. **Loops are a cadence, detected as a pattern.** The core counts
-   consecutive same-source hang-window re-captures whose turnaround is
-   sub-human (`loop_gap`, default 0.5 s) and raises `loop_suspected` at
-   `loop_count` (default 4) — alarm class, surfaced prominently. Loops
-   are misconfigurations; the fix is operator action. A configurable
-   circuit breaker that temporarily disables the offending member is
-   available later as policy (D-21).
+   it is already handling, per-peer by wire stream ID — the common
+   reflection case, caught where it happens.
+3. **Same `(src, dst)` is not loop evidence** (D-19). Overlapping
+   same-source streams are ordinary contention; the event notes
+   `same_src: true`.
+4. **Loops are a cadence.** The core counts consecutive same-source
+   hang-window re-captures whose turnaround is sub-human (`loop_gap`,
+   default 0.5 s) and raises `loop_suspected` at `loop_count` (default 4)
+   — alarm class, surfaced prominently.
 5. **Federation preserves origin metadata.** OBP with
-   `PRESERVE_SOURCE_PEER` keeps `origin_endpoint` and `src_id` intact across
-   instances (D-06), so these observations hold across federated cores.
-   TTL fields remain deliberately absent.
+   `preserve_source_peer` keeps the originating repeater ID and `src_id`
+   intact across instances, so these observations hold across federated
+   cores. TTL fields remain deliberately absent.
 
 ## 9. What the core does not do
 
-- Parse payloads. Ever. It routes on the frame header (D-25).
-- Track per-member delivery outcomes (D-17 — that is what events are
-  for).
-- Hold slot state, hang state, or endpoint state (D-16, D-17).
+- Parse the burst (D-25).
+- Modify the packet (FRAME §4.1).
+- Track per-member delivery outcomes (D-17).
+- Hold slot, hang, or endpoint state (D-16, D-17).
 - Resolve names or IDs (D-10).
-- Synthesize a frame, a header, or a terminator (D-14).
+- Synthesize a packet, a header, or a terminator (D-14).
 - Allocate on the datapath (D-23).

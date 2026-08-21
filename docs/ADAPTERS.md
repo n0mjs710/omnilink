@@ -1,9 +1,7 @@
 # ADAPTERS.md — Protocol Adapter Specifications
 
 An adapter is a self-contained protocol engine registered on the daemon's
-single event loop — the same shape as ipsc2hbpc and cc2obp, which is the
-point: we already know how to build, test, and live-debug exactly this
-thing.
+single event loop — the same shape as ipsc2hbpc and cc2obp.
 
 Five adapters: **HBP** (the dominant transport), **OBP** (the trunk),
 **XLX** (HBP plus a module link), **IPSC** and **CC-CC** (the legacy
@@ -15,20 +13,18 @@ Each adapter type exports an ops table; each configured system gets one
 instance.
 
 ```c
-/* Where this frame is going on this system. The core fills it: from the
-   bridge member for group calls, from the unit route cache for unit calls
-   (ROUTING.md §6). It is the only channel by which delivery parameters
-   reach an adapter. */
+/* Delivery parameters for one member. Filled by the core from the bridge
+   member, or from the unit route cache for unit calls (ROUTING §6). */
 typedef struct {
-    uint32_t tgid;      /* destination TGID; equals frame dst_id for unit calls */
-    uint8_t  slot;      /* 1 | 2; 0 = unslotted egress (OBP, CC) */
-    uint32_t endpoint;  /* specific endpoint to deliver to; 0 = adapter's choice */
+    uint32_t tgid;      /* destination TGID; equals dst_id for unit calls */
+    uint8_t  slot;      /* 1 | 2; 0 = unslotted egress (OBP, CC-CC) */
+    uint32_t endpoint;  /* deliver to this endpoint; 0 = adapter's choice */
 } nx_egress_target;
 
 typedef struct {
     /* Open sockets, register fds/timers on the shared loop. */
     void *(*init)(const nx_system_cfg *cfg, ev_loop *loop, uint16_t sys_idx);
-    /* Core hands an egress frame for this system. Synchronous. */
+    /* Core hands a packet to deliver on this system. Synchronous. */
     void  (*egress)(void *inst, uint32_t tag,
                     const uint8_t *dmrd, int len,
                     const nx_egress_target *t);
@@ -48,15 +44,10 @@ bool nx_acl_check_reg(uint16_t sys, uint32_t endpoint_id); /* §1.3 */
 Everything is a direct synchronous call on one thread — no queues, no
 rings, no handoffs (ARCHITECTURE §2).
 
-**Why the target is a parameter and not config the adapter holds.** An
-adapter must not carry a private replica of bridge membership: rule
-distribution to the edge is policy at the edge, which D-21 forbids. It
-also would not work — unit calls route from the core's cache, which no
-adapter can see, and the origin's slot is never carried through to egress
-(the egress adapter rewrites the timeslot in the `bits` byte to the
-target member's slot, FRAME §1.1), so without this parameter there is no
-channel by which the core could name an endpoint or a slot. One struct closes both holes and
-keeps every routing decision in the core.
+**The target is a parameter, never config the adapter holds.** An adapter
+carrying a private replica of bridge membership would be policy at the
+edge (D-21), and it would not work anyway: unit calls route from the
+core's cache, which no adapter can see.
 
 **Each system is a fully isolated instance.** The adapter *type* is
 shared code only. Every configured system gets its own state object —
@@ -70,49 +61,26 @@ semantics lie.
 
 - All protocol machinery: auth, registration, keepalives, endpoint state.
 - **Present a well-formed DMRD packet** and allocate its stream tag
-  (FRAME §3.1). For HBP, OBP, and XLX the packet is what arrived — hand
-  the pointer over.
-
-  **IPSC re-packs; CC-CC synthesizes. They are not the same case.** IPSC
-  carries the same DMR protocol elements HBP does — voice headers and
-  terminators, a DMR LC, embedded LC, superframe position, timeslot —
-  arranged differently and without the over-the-air FEC and interleave.
-  Its LC is lifted from IPSC's own LC, never invented, and only the
-  structural wrapping is assembled. `ipsc2hbpc` already composes exactly
-  this packet today.
-
-  **CC-CC is the only adapter without burst and superframe data on its
-  wire** — three 49-bit AMBE frames, RTP, and B-on/B-off, and nothing
-  else (FRAME §4). It is therefore the only adapter that invents
-  structure, and the only one running its own A–F position counter (§6).
-
-  In every case the LC must agree with the DMRD header, and anything
-  actually built comes from `dmr/`'s tables (D-28) — never from a
-  captured constant.
+  (FRAME §3.1). HBP, OBP, and XLX hand over what arrived; IPSC re-packs;
+  CC-CC assembles. The three tiers and the burst-construction rules are
+  FRAME §4.
 - **The `bits` byte must be right, including on unslotted transports.**
   Slot is part of the routing key (D-04), so OBP, CC-CC, and XLX stamp
   the nominal slot D-07 assigns them. Frame type and dtype/vseq must
-  reflect what the burst actually is: an adapter that *constructs* a
-  burst already chose sync-at-A versus EMB-at-B–F to build it at all, so
-  it knows the position and must record it. DMRD has no encoding for
-  "position unknown", and inventing one by miscounting hands the far
-  egress a fragment/position mismatch that only an audio decode would
-  catch.
-- **Preserve call structure** (D-14). Real headers and terminators cross
-  as real headers and terminators; nothing is synthesized; a headerless
-  late-entry stream begins with voice bursts and stays headerless end to
-  end.
-  **No timeout terminators ever enter the core** — when a stream stops,
-  the core emits the event and everyone's state expires on its own
-  timers.
-- **Forward every stream to the core unconditionally** — including
-  streams local repeat also delivered in-system, and streams expected to
-  match no bridge (ROUTING §2). The core must see all edge activity or
-  the dashboard, the accounting, and the route cache are all lying.
+  reflect what the burst actually is: an adapter that constructs a burst
+  already chose sync-at-A versus EMB-at-B–F to build it, so it knows the
+  position and must record it. DMRD has no encoding for "position
+  unknown".
+- **Preserve call structure** (D-14). Nothing is synthesized; a
+  headerless late-entry stream stays headerless end to end; **no timeout
+  terminators ever enter the core**.
+- **Forward every stream to the core unconditionally**, including streams
+  local repeat also delivered in-system and streams expected to match no
+  bridge (ROUTING §2).
 
 ### 1.2 Source peer: accept on ingress, decide on egress
 
-`origin_endpoint` is the radio ID of the infrastructure device a call
+The DMRD repeater ID (bytes 11–14) is the infrastructure device a call
 entered the network through. Three rules:
 
 - **Ingress accepts what arrives.** Whatever the wire carries *is* the
@@ -145,17 +113,18 @@ Split by what the core can see (D-21):
   keeps ACLs in the live-reloadable rules file with one implementation
   and one enforcement order.
 - **Registration ACLs** (`reg`) are enforced by the adapter, at login —
-  the core never sees a login as a frame. The adapter *queries*
+  the core never sees a login at all. The adapter *queries*
   (`nx_acl_check_reg`) rather than holding a copy, so a reload takes
   effect on the next registration attempt without adapter involvement.
 
 ### 1.4 Universal egress duties (core → wire)
 
-- Emit the payload burst in the protocol's framing. Burst-native adapters
-  write it out and re-touch it only where routing requires it (retarget
-  LC splice, FRAME §4.1, via `dmrlc.c`). Bare-AMBE adapters reduce it
-  (`dmr_ambe_72_to_49` ×3) and wrap it in their own framing. Protocol
-  packet wrap and protocol stream IDs in both cases.
+- **Copy once, rewrite everything in that pass.** The core hands a
+  `const` packet; the adapter copies it to write its own wire stream ID
+  and repeater ID, and rewrites the destination in the header and in the
+  LC at the same time (FRAME §4.1, via `dmrlc.c`). CC-CC additionally
+  reduces the burst to AMBE (`dmr_ambe_72_to_49` ×3); IPSC unpacks to its
+  own field layout.
 - Slotted protocols call **`channel.c`** for per-`(system, slot)`
   arbitration, hang time, and the `stream_to` contention horizon
   (ROUTING §5.2), with local-repeat traffic in the same arbitration
@@ -168,11 +137,11 @@ Split by what the core can see (D-21):
 - **Event every drop** — `slot_busy`, `payload_unsupported`, `endpoint_down` —
   so the log and dashboard can join the core's forwarded-to *intent* with
   the edge's *outcome* (D-17). Nothing is reported back to the core; it
-  keeps forwarding, and that is fine.
+  keeps forwarding.
 - **Forward on arrival. No pacing, no loss concealment** (D-15). Every
   endpoint stack already owns jitter buffering and gap handling. Gaps
   present as real gaps. The sole exception in the entire system is the
-  IPSC egress clock (§4).
+  IPSC egress clock (§5.1).
 
 ### 1.5 Always
 
@@ -211,15 +180,13 @@ list (§5.2). Both are correct; neither is the other.
   including the `bits` byte, so ingress is a pointer hand-off plus the
   stream-tag lookup (FRAME §3.1), pooled per client and slot. **No
   decoding of any kind** — not the burst, not the LC.
-- **Egress (passthrough):** write the payload burst back out as DMRD,
-  re-touched only where routing requires it — if the member's TGID
-  differs from the frame's, splice the per-stream precomputed LCs
-  (FRAME §4.1). New HBP `stream_id` per stream, slot from the egress
-  target, arbitration via `channel.c`. No pacing: forward on arrival, as
-  hblink3 and hblink4 always have.
-- **`origin_endpoint` handling.** On ingress it is the DMRD RptrId; on
-  egress the DMRD RptrId is the local system's ID, which is standard
-  (§1.2).
+- **Egress (passthrough):** write the packet back out, touched only
+  where routing requires — a new wire `stream_id` per stream, the local
+  repeater ID, the target slot in the `bits` byte, and the destination in
+  header and LC if the member's TGID differs (FRAME §4.1). Arbitration
+  via `channel.c`. No pacing.
+- **Repeater ID:** on ingress it is whatever arrived; on egress it is
+  the local system's ID (§1.2).
 
 ### 2.1 Local repeat — the client/server obligation (D-18)
 
@@ -263,12 +230,12 @@ The trunk (D-06), and the HBlink4 interconnect (D-03).
   reference for multi-stream tracking and dedupe. Both ends of an
   OmniLink↔OmniLink link are ours, so extensions are available there and
   nowhere else.
-- **Ingress:** HMAC verify, DMRD parse, burst copied verbatim — OBP
-  carries HBP-style bursts, so this is a copy, not a conversion. Stamp
-  the `bits` byte's slot from the wire (1 by OBP convention; the real
-  slot when `both_slots` is set). Many concurrent streams, from a per-peer stream
-  pool. **Per-stream dedupe** of retransmit and reflection cases, which
-  is the cheapest and most effective loop control in the system
+- **Ingress:** HMAC verify, then hand the packet over — OBP carries
+  DMRD, so there is nothing to convert. Slot comes from the wire (1 by
+  OBP convention; the real slot when `both_slots` is set). Many
+  concurrent streams from a per-peer pool, keyed on the wire `stream_id`
+  (FRAME §3). **Per-stream dedupe** of retransmit and reflection cases —
+  the cheapest and most effective loop control in the system
   (ROUTING §8).
 - **Egress:** wire slot fixed at 1 per OBP convention, no arbitration
   (trunk semantics), no pacing, one wire `stream_id` per core stream.
@@ -335,8 +302,8 @@ rejected. Gate 4 means **only the three header frames carry the command**
 — the terminators are slot type 2 and are ignored as commands, but are
 sent to frame the call correctly.
 
-Build the LC honestly from the same src/dst as the DMRD header
-(FRAME §4.1 rule 1). xlxd reads the destination from header bytes 8–10
+Build the LC from the same src/dst as the DMRD header
+(FRAME §4 rule 1). xlxd reads the destination from header bytes 8–10
 and never decodes the LC — its BPTC decode is commented out at
 `:657-660` — so a contradictory LC *would* work, and must still not be
 shipped: it is invisible to every test that does not decode audio.
@@ -395,46 +362,36 @@ reason this section exists.
 
 ## 5. IPSC — Motorola
 
+**IPSC is not a bare-AMBE transport.** Its wire carries `VOICE_HEAD` and
+`VOICE_TERM` burst types, a DMR LC, the reassembled embedded LC on burst
+E, superframe position, and timeslot — the same material HBP carries,
+arranged differently and without the over-the-air FEC and interleave. The
+adapter **re-packs real elements**; it does not invent a call out of AMBE.
+
+What IPSC does not carry is the assembled burst's structural wrapping:
+BPTC, sync, slot type, and EMB. Colour code lives in EMB and slot type,
+so it is absent here in both directions (D-28).
+
 - **Reuse:** `ipsc2hbpc/src/ipsc.c` (auth/HMAC, registration, keepalive,
-  burst parse — live-proven in production) is the engine; dmrlink3
-  remains the semantic reference for master mode and multi-peer
-  bookkeeping.
-- **Modes:** `peer` — join an existing IPSC network, the primary mode;
-  and `master` — bootstrap master, as dmrlink does.
-**IPSC carries the same DMR protocol information HBP does.** It is not a
-bare-AMBE transport. On the wire it has `VOICE_HEAD` and `VOICE_TERM`
-burst types, a DMR LC, the reassembled embedded LC on burst E, superframe
-position, and timeslot — the same material, arranged differently and
-without the over-the-air FEC and interleave. So this adapter **re-packs
-real elements**; it does not invent a call out of AMBE.
-
-What IPSC does *not* carry is the assembled burst's structural wrapping:
-BPTC encoding, sync patterns, slot type, and the EMB signalling field.
-Colour code lives in EMB and slot type, so it is absent here in both
-directions, which is why D-28's fixed CC-1 tables cost nothing.
-
-- **Ingress:** burst type classification → call boundaries; AMBE
-  extracted as 3 × 49-bit and re-packed into a 33-byte burst (`dmr/`:
-  49→72, BPTC, slot type, sync, EMB) per FRAME §4.1. **The LC comes from
-  IPSC's own LC**, not from invented values, and must agree with the
-  frame header. `vseq` comes from real superframe position — burst E is
-  explicitly identifiable (`GV_BE_FLAG`), so the `bits` byte's
-  dtype/vseq is always a real position. `origin_endpoint` from the IPSC RptrId field; per-network
-  keepalive state → `nx_core_system_state` plus events.
-- **Egress:** unpack the burst back to AMBE and IPSC's own fields, slot
-  from the egress target, IPSC sequence and RTP fields owned here — the
-  ipsc2hbpc HBP→IPSC path, already solved. **The IPSC peer ID is always
-  rewritten to this system's own radio ID.** A mesh will not forward a
-  call that did not originate from one of its peers, so injecting
-  traffic means identifying as the mesh member doing the injecting —
-  which is exactly what OmniLink is. Unlike OBP there is no preserve
-  option (§1.2).
-- **Retarget rewrites the IPSC LC in place.** IPSC has the same
-  LC-in-payload duplication HBP does: the packet carries both header
-  src/dst and a DMR LC, and a member with a different TGID needs both
-  changed together. dmrlink3 does exactly this (`bridge.py`, "Rewrite
-  DST GROUP + IPSC SRC in DMR LC"). This is why the IPSC loopback vector
-  asserts on the LC and not only on the AMBE bits (FRAME §6).
+  burst parse — live-proven in production) is the engine; dmrlink3 is the
+  semantic reference for master mode and multi-peer bookkeeping.
+- **Modes:** `peer` — join an existing mesh, the primary mode; `master` —
+  bootstrap master, as dmrlink does.
+- **Ingress:** burst type → call boundaries; AMBE extracted as 3 × 49-bit
+  and re-packed into a burst (`dmr/`: 49→72, BPTC, slot type, sync, EMB)
+  per FRAME §4. **The LC comes from IPSC's own LC**, never invented, and
+  must agree with the DMRD header. Burst position is real — burst E is
+  explicitly identifiable (`GV_BE_FLAG`). Repeater ID from the IPSC
+  RptrId field; keepalive state → `nx_core_system_state` plus events.
+- **Egress:** unpack to AMBE and IPSC's own fields, slot from the egress
+  target, IPSC sequence and RTP fields owned here — the ipsc2hbpc
+  HBP→IPSC path, already solved. **The IPSC peer ID is always rewritten
+  to this system's own radio ID** (§1.2).
+- **Retarget rewrites the IPSC LC in place**, because IPSC has the same
+  LC-in-payload duplication HBP does. dmrlink3 does exactly this
+  (`bridge.py`, "Rewrite DST GROUP + IPSC SRC in DMR LC"), and it is why
+  the IPSC loopback vector asserts on the LC as well as the AMBE bits
+  (FRAME §6).
 
 ### 5.1 The egress clock — the system's sole pacing exception (D-15)
 
@@ -519,8 +476,8 @@ until this adapter passes its live gate (D-24). Never double-bind UDP
 - **Ingress:** B-on → a real voice-header packet. A B-on *is* a genuine
   call-start signal, so building the header from its metadata is
   translation of a real event, not synthesis. Media → AMBE
-  triplets built up into bursts per FRAME §4.1, with the LC agreeing with
-  the frame header and structure from `dmr/`'s fixed CC-1 tables (D-28).
+  triplets built up into bursts per FRAME §4, with the LC agreeing with
+  the DMRD header and structure from `dmr/`'s fixed CC-1 tables (D-28).
   B-off → a terminator packet.
 
   **Stamp a real position.** The adapter chooses sync-at-A versus

@@ -51,7 +51,7 @@ because they are what changed:
 - **`core.c` / `route.c`** — stream table; the `(system, slot, tgid)`
   bridge index with multi-bridge fan-out; per-bridge arbitration; the
   dynamic-rules engine with its asymmetric triggers and 10 s sweep;
-  timeouts; loop cadence detection. Unit-tested against scripted frame
+  timeouts; loop cadence detection. Unit-tested against scripted packet
   sequences — no sockets needed, call `nx_core_ingress` directly.
 - **`channel.c`, `dmrlc.c`** — shared hang/contention and LC handling,
   unit-tested standalone.
@@ -60,7 +60,7 @@ because they are what changed:
 - **Live reload** — validate-then-swap, generation-tracked arenas,
   in-flight streams pinned (CONFIG §6.3).
 - **`main.c`** — startup, shutdown, signals; a `null` test adapter that
-  loops frames and emits events, proving the loop and event plumbing end
+  loops packets and emits events, proving the loop and event plumbing end
   to end.
 
 **Gate:** `make test` green, including —
@@ -199,7 +199,7 @@ no audio interruption.
 
 | risk | carried where |
 |---|---|
-| Header/LC disagreement in a constructed or retargeted burst | The cost of a burst-native core. Invisible to any test that does not decode audio, so it is a conformance-vector requirement (D-11), not a review item. `dmrlc.c` exists to keep it in one place. |
+| Header/LC disagreement in a constructed or retargeted burst | Invisible to any test that does not decode audio, so it is a conformance-vector requirement (D-11), not a review item. `dmrlc.c` keeps it in one place. |
 | Synthesized burst structure breaks a receiver's EMB/LC expectations | Confined to **CC-CC**, the only adapter without burst and superframe data on its wire. HBP, OBP, and XLX carry the assembled burst; IPSC carries every element unpacked and re-packs them. CC-CC also ships last, against a core already proven on air. `dmr/` is the reference. |
 | CC's exotic AMBE representation regresses in the port | Solved once in cc2obp; vectors lock it in; CC ships last anyway (D-11). |
 | Parity suite finds hblink3 behavior the docs did not capture | Expected, and the reason phase 3 exists. Each finding is either a bug fixed or a DEVIATIONS entry plus a DECISIONS update — never a silent difference. |

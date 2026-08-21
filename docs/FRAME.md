@@ -91,36 +91,27 @@ comes from:
 | IPSC | (peer, slot) | `VOICE_HEAD`, or RTP-timestamp discontinuity | **no** |
 | CC-CC | the conduit | B-on | **no** |
 
-**The tag's one real job is preventing two streams from sharing an
-identity.** Be clear about the scope, because it is easy to oversell:
+**The tag's one job is preventing two streams from sharing an identity.**
 
-- For IPSC and CC-CC the tag adds no capability. Neither wire carries a
-  usable per-call ID — IPSC's call-seq byte is re-minted every superframe
-  by XPR8400 firmware when Talker Alias is interleaved, so `ipsc2hbpc`
-  anchors on RTP continuity and mints its own `rand4()` stream ID. Those
-  adapters invent an identifier either way; the tag only changes it from
-  adapter-random to core-allocated.
-- For HBP, OBP, and XLX the wire ID is real and stable within a call, so
-  the core *could* key on `(system, stream_id)`. The tag exists because
-  that ID is chosen at random by the originating repeater, not by us.
+- For IPSC and CC-CC it adds no capability. Neither wire carries a usable
+  per-call ID — IPSC's call-seq byte is re-minted every superframe by
+  XPR8400 firmware when Talker Alias is interleaved, so `ipsc2hbpc`
+  anchors on RTP continuity and mints its own — so those adapters invent
+  an identifier either way.
+- For HBP, OBP, and XLX the wire ID is real and stable within a call. The
+  tag exists because that ID is chosen at random by the originating
+  repeater, not by us.
 
-**The failure it removes**, exactly: two clients on one system pick the
-same random `stream_id` concurrently. Their streams merge into one core
-entry — the second one's audio is delivered using the first one's cached
-delivery set (D-29), so it lands on the wrong talkgroup and the wrong
-members, and one call's terminator ends both. It is bounded and
-self-healing, lasting only as long as the overlapping calls, but for
-those seconds the routing is simply wrong.
+**The failure it removes:** two clients on one system pick the same
+`stream_id` concurrently, their streams merge into one core entry, and
+the second one's audio is delivered on the first one's cached delivery
+set (D-29) — wrong talkgroup, wrong members, until the overlap ends.
+Bounded and self-healing, but wrong while it lasts, and unreproducible.
 
-At 200 concurrent streams against a 32-bit space, the odds are a few
-percent over a year of heavy traffic — rare enough that nobody would ever
-reproduce it, common enough that it will happen to somebody.
-
-**It is nearly free**, which is the actual argument. The ingress map has
-to exist regardless, because detecting a new stream requires remembering
-the last one. The egress map has to exist regardless, because one core
-stream fanned to three HBP systems needs three distinct wire stream IDs.
-The tag is just what those maps hold.
+**It is nearly free.** The ingress map must exist to detect a new stream
+at all, and the egress map must exist because one core stream fanned to
+three HBP systems needs three distinct wire stream IDs. The tag is just
+what those maps hold.
 
 ### 3.1 Mechanism
 
@@ -132,11 +123,11 @@ At ten new streams per second it wraps in roughly thirteen years.
 **Ingress map**, private to each adapter: protocol identity → tag. For
 HBP and IPSC the client or peer struct already exists for authentication
 and keepalives, so this is `ep->slot[ts].tag` — compare the stored wire
-ID against the arriving one, equal on nearly every frame, so the common
+ID against the arriving one, equal on nearly every packet, so the common
 path is two loads and a compare. On change, allocate a tag.
 
 **Egress map**, also private: tag → this system's wire identity. Mint a
-fresh `stream_id` on the first frame of an unseen tag.
+fresh `stream_id` on the first packet of an unseen tag.
 
 Both maps expire on call end or their own inactivity timer.
 
@@ -146,7 +137,7 @@ dashboard or logs. The adapter has it in its ingress map, so this is
 free — but it has to be specified, or it is quietly lost.
 
 **Headerless streams need no flag.** An egress adapter seeing its first
-frame for an unseen tag knows: if that frame is not a voice header, the
+packet for an unseen tag knows: if it is not a voice header, the
 stream is a late entry and it emits no wire header. Self-contained, no
 core involvement (D-14).
 

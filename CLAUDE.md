@@ -38,7 +38,7 @@ config reload," it is a leftover — treat it as absent and tell the owner.
   you feel you need one, stop — you've misread the design.
 - **No malloc on the datapath.** Allocation happens in `*_new()`/init at
   startup. The single carve-out is a rules reload, which is control-plane
-  work and is commented as such (D-23). No frame synthesis anywhere.
+  work and is commented as such (D-23). Synthesize nothing.
   Full rules: STYLE.md.
 - **`getaddrinfo` appears in `config.c` and nowhere else** (D-22). One
   blocking resolve on a reconnect timer deafens the whole daemon.
@@ -56,11 +56,11 @@ Check here before "fixing" one of these:
 - **Same TGID from a different source is admitted during hang.** Getting
   this "right" locks out every round-table net (D-16).
 - **A locally repeated call emits two `call_start` events.** Consumers
-  fold them on `(origin_system, stream_tag)` (D-17).
+  fold them on the stream tag (D-17).
 - **`timeout` in rules config is minutes**, ×60 at load, because that is
   what existing `rules.py` files mean (CONFIG §4).
 - **IPSC egress emits terminators and comfort silence.** Sole carve-outs,
-  IPSC wire only, and they never become frames (D-14, D-15).
+  IPSC wire only, and they never enter the core (D-14, D-15).
 - **HBP is `server`/`client`; IPSC is `master`/`peer`.** Not a style
   inconsistency — HBP is strictly client/server, IPSC is a real
   peer-to-peer mesh whose master just holds the bootstrap list. Do not

@@ -202,9 +202,11 @@ members = [
 [[bridge]]
 name = "TAC-1"
 members = [
-  { system = "KS-DMR", slot = 2, tgid = 8951,
+  # Key up 8951 to connect; drops after 10 idle minutes, or immediately
+  # if someone keys 4000. Triggers are legal on hbp/ipsc members only (§4).
+  { system = "KS-DMR",  slot = 2, tgid = 8951, active = false,
     to_type = "ON", timeout = 10, on = [8951], off = [4000], reset = [] },
-  { system = "BM-3102", tgid = 8951, active = false,
+  { system = "KS-WEST", slot = 2, tgid = 8951, active = false,
     to_type = "ON", timeout = 10, on = [8951], off = [4000] },
 ]
 ```
@@ -226,7 +228,7 @@ operator has to get right by rote.
 
 Injected versus exposed is about observability, not taste (D-07). XLX's
 TS2/TG9 is a protocol constant whose wrong value is *silently* fatal — no
-acknowledgement exists and no frame carries module identity, so
+acknowledgement exists and nothing on the wire carries module identity, so
 mis-addressed traffic vanishes without symptom. CC's local TGID is the
 opposite: a wrong value shows up immediately as traffic under a
 consistent but unexpected talkgroup, and the CC-CC specification expects
