@@ -239,6 +239,17 @@ the load-bearing one:
 Operators wanting two bridges joined join them. They do not do it
 implicitly through a shared single-talkgroup endpoint.
 
+**The single-member-syntax half of this decision is provisional.** The
+alternative is hblink3's shape — separate tables per kind, where a wrong
+value is inexpressible rather than rejected — and it is a real
+contender: it trades the readability of one member list per bridge for
+the safety of a grammar that cannot express the mistake. One member
+syntax is being run first because a bridge's membership stays in one
+readable place, which is the daily operation. Revisit on operator
+experience, and settle it before OmniLink is deployed widely; the
+validator's remedy text (CONFIG.md §6.1) is the mitigation in the
+meantime.
+
 Both are also excluded as unit-call targets. For CC the specification
 puts private calls out of scope entirely. For XLX the stakes are higher:
 module selection *is* a private call to 4001–4026, so a unit call
