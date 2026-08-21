@@ -183,26 +183,50 @@ first because a bridge's membership stays in one readable place, which is
 the daily operation. Revisit on operator experience and settle before
 wide deployment; the validator's remedy text is the mitigation meanwhile.
 
-## D-08 — Single-threaded C11, one event loop
+## D-08 — Single-threaded by default, because the work is I/O bound
 
-One thread, one `ev_loop`, direct function calls. No libpthread, atomics,
-locks, queues, or rings. (libpthread is excluded by *this* decision, not
-by the dependency policy in D-32.)
+One thread, one `ev_loop`, direct function calls.
 
-At D-20 scope there is no performance argument for concurrency, and the
-one real thing threads would buy — stall isolation — is already bounded
-by a systemd watchdog plus instance federation. A stalled adapter stalls
-the daemon; the watchdog restarts it in about a second; calls in flight
-are lost exactly as they would be at an RF site taking a power hit.
+**The reason is the workload, not a principle.** OmniLink waits on
+network I/O; it is not CPU bound. At D-20 scope, even the egress fan-out
+that dominates the work (ARCHITECTURE §1) sits comfortably inside one
+core. A thread would buy stall isolation and nothing else, and that
+benefit is already bounded by a systemd watchdog plus instance
+federation: a stalled adapter stalls the daemon, the watchdog restarts it
+in about a second, and calls in flight are lost exactly as they would be
+at an RF site taking a power hit.
+
+**This is a preference with fallbacks, not a prohibition** — the same
+shape as D-32. If a thread genuinely serves lightweight, high-performance
+operation, it is the right choice, and the order of preference is:
+
+1. **One thread on the event loop.** The default, and correct while the
+   daemon is I/O bound.
+2. **A thread whose data crosses the boundary atomically** —
+   single-producer/single-consumer, lock-free. This is the preferred
+   shape if a thread is ever needed, because it keeps the benefit without
+   paying for locking semantics.
+3. **Locks.** Last resort, and a sign the split is in the wrong place.
+
+What is rejected is the everything-is-a-thread habit — reaching for
+concurrency by default and paying its coordination cost whether or not
+the workload asks for it.
+
+**Adding a thread is a design change**, decided deliberately with the
+docs updated, not something introduced mid-task because it seemed
+convenient. The adapter contract is a clean seam if that day comes:
+adapters could sit behind rings without the core changing.
+
+libpthread is excluded today by this decision, not by the dependency
+policy (D-32).
 
 **Why C:** neither operational pain being solved here (unforgiving rules
 files, chained daemons) is a language problem — D-09 and D-03 fix those.
 C is chosen for a single binary with no fragile dependencies (D-32) and
 the direct lift of field-proven code that already exists in the right
-shape. The cost is
-plain: the ACL grammar, the dynamic-rule engine, and the validator are
-where C buys least and costs most, and D-12 puts all three on the
-critical path.
+shape. The cost is plain: the ACL grammar, the dynamic-rule engine, and
+the validator are where C buys least and costs most, and D-12 puts all
+three on the critical path.
 
 ## D-09 — Two config files; rules and ACLs reload live
 

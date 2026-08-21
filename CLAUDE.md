@@ -33,9 +33,11 @@ config reload," it is a leftover — treat it as absent and tell the owner.
   holder), D-29 (delivery set resolved once, grow-only), D-30 (call end
   is call end, terminator or timeout). Each is marked **[departure]** at
   its site in ROUTING.md. Do not invent a fourth.
-- **Concurrency is banned.** `grep -E 'pthread_|sem_|_Atomic|atomic_'`
-  over `src/` must return nothing. No threads, no locks, no atomics. If
-  you feel you need one, stop — you've misread the design.
+- **The daemon is single-threaded** (D-08) and
+  `grep -E 'pthread_|sem_|_Atomic|atomic_'` over `src/` returns nothing.
+  That is the current design, not a taboo — but adding a thread is a
+  design change for the owner to make, so stop and raise it rather than
+  introducing one. Preferred shape if it ever happens: lock-free SPSC.
 - **No malloc on the datapath.** Allocation happens in `*_new()`/init at
   startup. The single carve-out is a rules reload, which is control-plane
   work and is commented as such (D-23). Synthesize nothing.

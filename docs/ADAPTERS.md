@@ -44,7 +44,9 @@ bool nx_acl_permit_traffic(uint16_t sys, uint32_t src, uint32_t dst,
 ```
 
 Everything is a direct synchronous call on one thread — no queues, no
-rings, no handoffs (ARCHITECTURE §2).
+rings, no handoffs (D-08). The contract is deliberately the seam that
+would survive that changing: an adapter could sit behind a ring without
+the core changing shape.
 
 **Each system is a fully isolated instance.** The adapter *type* is
 shared code only. Every configured system gets its own state object —

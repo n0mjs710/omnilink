@@ -72,15 +72,23 @@ deaf.
 `sockaddr` once; the datapath and reconnect timers use the stored address
 forever after.
 
-### Why not threads (D-08)
+### Why one thread, and what would change it (D-08)
 
-Threads would buy exactly one real thing here: stall isolation. At D-20
-scope that trade loses — the machinery cost (rings or locks, atomics,
-wakeup plumbing, cross-thread reasoning) outweighs an isolation benefit
-that a systemd watchdog plus instance federation already bounds. A
-stalled adapter stalls the daemon; the watchdog restarts it in about a
-second; calls in flight are lost exactly as they would be at an RF site
-taking a power hit.
+The daemon waits on network I/O; it is not CPU bound. Even the egress
+fan-out that dominates the work (§1) fits inside one core at D-20 scope,
+so a thread would buy stall isolation and nothing else — and that is
+already bounded by a systemd watchdog plus instance federation.
+
+This is a preference with fallbacks, not a ban. If a thread ever serves
+lightweight, high-performance operation better, the preferred shape is
+one whose data crosses the boundary **atomically** —
+single-producer/single-consumer, lock-free — so the benefit arrives
+without locking overhead. Locks are the last resort and usually mean the
+split is in the wrong place.
+
+The adapter contract is the seam that keeps this open: adapters could sit
+behind rings without the core changing. Adding a thread is a design
+change, made deliberately (D-08), not introduced mid-task.
 
 ## 3. Module boundaries
 

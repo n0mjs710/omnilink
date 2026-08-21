@@ -54,10 +54,12 @@ implementers**. When in doubt, open `ipsc2hbpc/src/` and match it.
   builds and frees a table arena on the control plane. Those allocation
   sites carry a `/* control plane: D-23 */` comment so the distinction
   survives a reader who only remembers the headline rule.
-- No concurrency, full stop: no threads, mutexes, semaphores, condvars,
-  or atomics. `grep -E 'pthread_|sem_|_Atomic|atomic_'` over `src/` must
-  return nothing. If an implementer feels the need for any of these, the
-  design has been violated somewhere — stop and raise it.
+- **The daemon is single-threaded as designed** (D-08), so `grep -E
+  'pthread_|sem_|_Atomic|atomic_'` over `src/` returns nothing today.
+  Treat a hit as a tripwire, not a crime: adding a thread is a design
+  change to be raised and decided, never introduced mid-task. If one is
+  ever added, the preferred shape is single-producer/single-consumer and
+  lock-free; locks are the last resort.
 - Every socket non-blocking; every fd in an `ev_loop`. No `sleep`, no
   blocking `connect` (use the eventloop timer + retry pattern from
   cc2obp `net.c`).
