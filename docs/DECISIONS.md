@@ -483,12 +483,15 @@ rate-limited event, keep running. Sustained exhaustion is a
 misconfiguration or an attack, not a traffic condition, so those events
 are alarm-worthy.
 
-## D-24 — Existing production stays untouched until gates pass
+## D-24 — *(withdrawn)* Migration policy
 
-ipsc2hbpc keeps the production IPSC bridge; hblink3, dmrlink3, and
-hblink4 keep their networks. OmniLink earns each role by passing the
-PLAN.md gate for it. Nothing double-binds a production port during
-testing.
+Specified how the author's own networks would cut over from hblink3,
+dmrlink3, and ipsc2hbpc. That is deployment practice, not project
+design, and it belongs to whoever is doing the deploying. The number is
+retired rather than reused.
+
+Each phase still earns its role by passing its gate (PLAN.md); that is
+the plan's own rule and needs no decision record.
 
 ## D-25 — The core routes on the DMRD header and never parses the burst
 

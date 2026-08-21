@@ -6,8 +6,7 @@ legacy edges. The routing core is the one genuinely novel part;
 everything after it is porting things we have already built once.
 
 Each phase has an **acceptance gate**. A phase is not done until its gate
-passes, and no production migration happens before the relevant gate
-(D-24).
+passes.
 
 Two consequences of D-12 shape this plan and are worth stating up front,
 because they are what changed:
@@ -31,7 +30,7 @@ because they are what changed:
   `DMR_SLOT_TYPE_VHEAD`/`VTERM` and `DMR_EMB` tables are exactly right.
   Do not add a Golay(20,8) slot-type encoder.
 
-**Gate:** clean build, lifted-module tests green on the dev server.
+**Gate:** clean build, lifted-module tests green.
 
 ## Phase 1 — Core (the biggest single phase)
 
@@ -95,8 +94,8 @@ because they are what changed:
   `tests/test_xlx_link.py`, which already encodes xlxd's five acceptance
   gates as assertions, including the reference vector that reproduces a
   known-good link burst byte for byte.
-- Live test on the dev server: a hotspot or repeater on OmniLink-HBP
-  bridged to (a) another HBP system and (b) HBlink4 over OBP.
+- Live test: a hotspot or repeater on OmniLink-HBP bridged to (a) another
+  HBP system and (b) HBlink4 over OBP.
 
 **Gate:** clean audio and correct metadata (src, dst, endpoint on the far
 dashboard), correct hang behavior, in **both directions** on both pairs —
@@ -118,16 +117,15 @@ asserted.
   `rules.toml` + `omnilink.toml`, reporting anything it cannot represent
   rather than guessing, and running its own output through
   `--check-config` (CONFIG §8).
-- **The parity suite** — take a real production `rules.py`, convert it,
+- **The parity suite** — take a real `rules.py`, convert it,
   and drive identical scripted traffic through both hblink3 and OmniLink,
   asserting identical routing decisions: same members reached, same
   rewrites, same arbitration outcomes, same dynamic-rule state
   transitions. Differences are either bugs or documented departures
   (there is exactly one, D-16), and any undocumented difference blocks
   the gate.
-- **Shadow deployment** — OmniLink alongside the live hblink3, on
-  separate ports, fed real traffic, with its decisions logged and
-  compared. Never double-binding a production port (D-24).
+- **Shadow deployment** — OmniLink alongside a live hblink3, on separate
+  ports, fed real traffic, with its decisions logged and compared.
 - **Dashboard v1** (EVENTS §8): backend model, WebSocket, front-end
   ported from hblink4, bridge-matrix view, last-heard, endpoint tables.
 
@@ -138,21 +136,20 @@ a rules reload is demonstrated on the shadow instance with a call in
 flight.
 
 **Only after this gate** is OmniLink a candidate to succeed hblink3 on a
-live network.
+live network. What an operator does with that is theirs; this plan builds
+the thing and proves it, and stops there.
 
 ## Phase 4 — IPSC
 
 - Port ipsc2hbpc's IPSC engine plus the jitter-buffer egress clock. Peer
-  mode first — join the existing production IPSC network from a **test**
-  instance, on its own port or host (ADAPTERS §5.2) — master mode
-  second.
-- Vectors from live IPSC captures; we have production access and
-  dmrlink3 as a reference decoder.
+  mode first — join an existing IPSC network from a **test** instance —
+  master mode second.
+- Vectors from live IPSC captures, with dmrlink3 as the reference
+  decoder.
 
 **Gate:** MOTOTRBO repeater ↔ HBP hotspot through OmniLink, clean audio
-both ways, pacing verified against a real repeater. Only after at least
-one week of shadow running does it become a candidate to succeed
-ipsc2hbpc in production (D-24).
+both ways, pacing verified against a real repeater, plus at least one
+week of shadow running without divergence.
 
 ## Phase 5 — CC-CC
 
@@ -163,8 +160,8 @@ ipsc2hbpc in production (D-24).
 - Bound-endpoint validation: one bridge, injected nominal slot, exposed
   TGID, never a unit target (D-07).
 
-**Gate:** clean audio both ways against the production c-Bridge over a
-test conduit, with the AMBE vectors green.
+**Gate:** clean audio both ways against a c-Bridge over a test conduit,
+with the AMBE vectors green.
 
 ## Phase 6 — Unit calls, data, hardening
 
