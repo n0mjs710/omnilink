@@ -779,3 +779,51 @@ Consequences:
   repeaters for the dashboard.
 - `dmr/` is complete as vendored. No Golay(20,8) slot-type encoder is
   needed, and hblink3's `xlx_slot_type()` is not ported.
+
+## D-29 — A stream's delivery set is resolved once and only grows
+
+The core resolves a stream's delivery set at stream open and caches it
+against the stream identity; later frames replay it. hblink3 re-derives
+per packet. **Departure, deliberate.**
+
+- **Removals do not apply in flight.** A member going inactive
+  mid-transmission keeps receiving until the call ends. Truncating a
+  transmission because a timer expired has no RF analog (D-13).
+- **Additions apply immediately.** A member becoming active
+  mid-transmission joins every in-flight stream on its bridges as a
+  headerless late entry.
+
+The asymmetry is not aesthetic. Additions must apply because a member
+brought in while its bridge is busy would otherwise hear silence,
+conclude the bridge is idle, transmit, and be refused — with no
+indication that nobody heard them. Splicing them into the call already
+running is the RF behavior: they unkey into the middle of a transmission
+and know to wait. Silent-but-busy is an IP-only failure mode.
+
+Ordering on CALL_START: activation triggers fire **before** the delivery
+set is resolved, so the transmission that brings a member in reaches it.
+
+This also makes `call_start`'s intent list (D-17) a floor rather than a
+snapshot: every member listed received the call, and members added later
+are evented separately.
+
+Requires a stable per-stream identity to cache against, which raises the
+stakes on identity collisions — two streams sharing a cached delivery set
+would deliver traffic to the wrong bridge's members.
+
+## D-30 — Call end is call end, whatever caused it
+
+Deactivation triggers and dynamic-rule timer resets (ROUTING §4.3) fire
+when a stream ends from **any** cause — a real terminator or a timeout.
+**Departure, deliberate.**
+
+hblink3 fires them only inside its real-terminator branch, so a stream
+whose terminator is lost never tears its bridge down. DMR loses
+terminators routinely — that is the reason stream timeout exists — and a
+bridge an operator asked to drop should drop whether or not their last
+burst survived the path.
+
+The core already emits `call_end` with `reason=timeout` on that path
+(ROUTING §3), so this costs nothing beyond running the same trigger
+block from both exits. It does not change D-14: still nothing is
+synthesized downstream.

@@ -21,9 +21,11 @@ config reload," it is a leftover — treat it as absent and tell the owner.
   not improvise policy. Routing semantics, timers, protocol behavior
   choices — ask, don't guess.
 - **hblink3 is the tie-breaker.** Where the docs are silent on a routing
-  question, hblink3's `bridge.py` behavior is the answer (D-03). There is
-  exactly one deliberate departure from it, D-16 (the per-bridge talker
-  holder). Do not invent a second one.
+  question, hblink3's `bridge.py` behavior is the answer (D-03). There
+  are exactly three deliberate departures — D-16 (per-bridge talker
+  holder), D-29 (delivery set resolved once, grow-only), D-30 (call end
+  is call end, terminator or timeout). Each is marked **[departure]** at
+  its site in ROUTING.md. Do not invent a fourth.
 - **Concurrency is banned.** `grep -E 'pthread_|sem_|_Atomic|atomic_'`
   over `src/` must return nothing. No threads, no locks, no atomics. If
   you feel you need one, stop — you've misread the design.

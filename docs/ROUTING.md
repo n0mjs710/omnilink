@@ -9,7 +9,7 @@ the daemon's single thread (ARCHITECTURE.md §2).
 **hblink3 is the specification** (D-03). Where this document is silent,
 hblink3's `bridge.py` behavior is the answer. Where OmniLink departs
 from it, the departure is called out explicitly and marked
-**[departure]**; there is exactly one, in §5.
+**[departure]**; there are three — §3.1, §4.3, and §5.1.
 
 ## 1. Vocabulary
 
@@ -163,6 +163,49 @@ rules_generation, state
   `stream_tag` mappings silently and egress expires per-stream state on
   its own inactivity timer.
 
+### 3.1 The delivery set is resolved once, and only grows **[departure]**
+
+When a stream opens, the core resolves its delivery set — the members it
+will be forwarded to — and caches it against the stream. Subsequent
+frames replay that set rather than re-deriving it. hblink3 re-derives per
+packet; this does not.
+
+**Removals are not applied to a stream in flight.** A member that goes
+inactive mid-transmission keeps receiving until the call ends. Cutting a
+transmission off mid-word because a timer expired has no RF analog
+(D-13), and the far end would get a call with no terminator for no
+reason.
+
+**Additions are applied immediately.** A member that becomes active
+mid-transmission is added to every in-flight stream on its bridges, and
+begins receiving as a headerless late entry. This is not symmetry for its
+own sake — it is what tells an operator the bridge is busy:
+
+> KANSAS has a call in progress. WEST is not an active member. A user on
+> WEST keys the trigger TGID to bring WEST in. Their own transmission is
+> refused, because KANSAS is held. If WEST were not spliced into the call
+> already running, that user would hear silence, conclude the bridge is
+> idle, key up and talk — and be dropped again, with no indication that
+> nobody heard them.
+
+Splicing them in reproduces the RF behavior exactly: they unkey into the
+middle of someone else's transmission and know to wait. A channel that is
+silent but busy is an IP-only failure mode, which is precisely where
+D-13 says to intervene.
+
+So: **a stream's delivery set never shrinks during its lifetime.**
+
+Ordering, on CALL_START: fire activation triggers (§4.2) **first**, then
+resolve the delivery set — so the transmission that brings a member in is
+itself delivered to it.
+
+Resolving once also makes the `call_start` event honest. It publishes the
+members a stream was forwarded to as delivery intent (D-17), and under
+per-packet re-derivation that list is a snapshot at frame one that can
+quietly stop being true. Resolved once and grow-only, it is a floor: every
+member listed did receive the call, and any member added later is evented
+separately.
+
 **`rules_generation`** pins the stream to the rules arena it opened
 under, so a reload mid-call cannot pull a bridge or member out from under
 an in-flight transmission (D-09, D-23).
@@ -205,17 +248,46 @@ still works and is still operator-controllable (§4.5).
 
 ### 4.1 Trigger timing is asymmetric, and deliberately so
 
-**Activation triggers fire on CALL_START.** They must, so that the header
-frame and every subsequent frame of the *triggering transmission* route
-to the newly connected targets. Firing them at call end would connect the
-bridge exactly one transmission too late — the operator keys up to bring
-the link up and their own call is the one that gets dropped.
+**Activation triggers fire on CALL_START, so that the operator's
+identification is not truncated.**
 
-**Deactivation triggers fire on CALL_END**, for the mirror reason: a
+The common configuration has the trigger TGID equal to the member's
+TGID — trigger on 314, talk on 314. An operator brings the bridge up the
+way operators actually do it: they key up and say "N0XYZ monitoring."
+Firing activation at call start means that transmission passes through
+and the bridge hears who just arrived. Firing it at unkey would eat the
+entire transmission, and nobody would know N0XYZ is there.
+
+This is not an FCC identification question — the repeater identifies
+itself — it is the human convention, and it is the one that matters
+operationally.
+
+The design principle generalizes: **kerchunking is poor form and it
+exists, but addressing it here would break the polite operator's
+standard procedure.** Optimize for correct operating practice, not
+against incorrect practice.
+
+The concern that activation-on-start lets kerchunks flood the routing
+system mostly does not apply, because routing is by TGID. A trigger on a
+TGID that no member carries fires the trigger and then finds no bridge
+member to route to, so it goes nowhere. The only case that forwards is
+trigger-TGID equals member-TGID — which is the case above, where
+forwarding it is the entire point.
+
+**Deactivation triggers fire on call end**, for the mirror reason: a
 transmission that tears the bridge down should itself complete first.
 
 Both are in-band signalling and have nothing to do with routing that
 frame. Implementations must keep the two paths distinct.
+
+**Triggers fire even when the triggering stream is itself dropped.** A
+stream that loses arbitration (§5.1) forwards nothing, but its triggers
+still run. This is the case that matters: an operator keying up to bring
+a bridge in while that bridge is already busy gets their own
+transmission refused, and the activation must still happen — otherwise
+they hear nothing, assume the bridge is idle, and are dropped again
+(§3.1). Skipping trigger processing for a dropped stream is a plausible
+"optimization" and it breaks exactly this.
 
 ### 4.2 On CALL_START, for each member of the origin system
 
@@ -230,9 +302,16 @@ Matching requires `slot == member.slot`. For each member where
 - Then, if the member is active and `to_type == ON`, reset
   `timer = pkt_time + timeout`.
 
-### 4.3 On CALL_END, for each member of the origin system
+### 4.3 On call end, for each member of the origin system
 
 Matching requires `slot == member.slot`.
+
+**"Call end" here means end of stream from any cause — a real terminator
+or a timeout. [departure]** hblink3 fires these only inside its
+real-terminator branch, so a stream whose terminator is lost never tears
+its bridge down. DMR loses terminators routinely — that is why stream
+timeout exists at all — and a bridge the operator asked to drop should
+drop whether or not their last burst survived the path.
 
 - **Traffic on the member's own TGID resets its timer.** If
   `dst_id == member.tgid` and either (`to_type == ON` and active) or
