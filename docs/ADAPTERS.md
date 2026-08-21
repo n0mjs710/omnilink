@@ -38,7 +38,7 @@ typedef struct {
 void nx_core_ingress(const nx_frame *f);
 void nx_core_system_state(uint16_t sys, uint32_t endpoint, bool up);
 void nx_event_emit(/* subsys, sys, ev, lvl, fields... */);
-bool nx_acl_check_reg(uint16_t sys, uint32_t endpoint_id); /* §1.2 */
+bool nx_acl_check_reg(uint16_t sys, uint32_t endpoint_id); /* §1.3 */
 ```
 
 Everything is a direct synchronous call on one thread — no queues, no
@@ -104,7 +104,32 @@ semantics lie.
   match no bridge (ROUTING §2). The core must see all edge activity or
   the dashboard, the accounting, and the route cache are all lying.
 
-### 1.2 Where ACLs are enforced
+### 1.2 Source peer: accept on ingress, decide on egress
+
+`origin_endpoint` is the radio ID of the infrastructure device a call
+entered the network through. Three rules:
+
+- **Ingress accepts what arrives.** Whatever the wire carries *is* the
+  source peer as far as we can know. An adapter never second-guesses it
+  or substitutes something it likes better.
+- **The core carries it unchanged** and never rewrites it. It feeds
+  last-heard, the unit route cache, and the dashboard.
+- **Egress decides what to put on its own wire**, per that system's
+  config and its protocol's convention.
+
+Egress is where the protocols differ, and one of them has no choice:
+
+| adapter | egress source peer |
+|---|---|
+| HBP | the local system's ID (standard) |
+| OBP | `network_id` by OBP convention; `preserve_source_peer` retains the original instead |
+| IPSC | **must** be the local peer's radio ID — the peer ID is the authenticated identity in the IPSC peer list, so this is a protocol requirement, not a policy choice (dmrlink3 rewrites it unconditionally) |
+| CC-CC | the conduit's own identity; the originating peer rides in the B-on |
+
+This is entirely an adapter concern. The core neither knows nor cares
+which choice a system makes.
+
+### 1.3 Where ACLs are enforced
 
 Split by what the core can see (D-21):
 
@@ -118,7 +143,7 @@ Split by what the core can see (D-21):
   (`nx_acl_check_reg`) rather than holding a copy, so a reload takes
   effect on the next registration attempt without adapter involvement.
 
-### 1.3 Universal egress duties (core → wire)
+### 1.4 Universal egress duties (core → wire)
 
 - Emit the payload burst in the protocol's framing. Burst-native adapters
   write it out and re-touch it only where routing requires it (retarget
@@ -142,7 +167,7 @@ Split by what the core can see (D-21):
   present as real gaps. The sole exception in the entire system is the
   IPSC egress clock (§4).
 
-### 1.4 Always
+### 1.5 Always
 
 Emit events (endpoint up/down, call boundaries seen at the edge, drops,
 malformed packets) and 10 s `stats` counter events; report liveness via
@@ -186,11 +211,9 @@ list (§5.2). Both are correct; neither is the other.
   (FRAME §4.1.1). New HBP `stream_id` per stream, slot from the egress
   target, arbitration via `channel.c`. No pacing: forward on arrival, as
   hblink3 and hblink4 always have.
-- **`origin_endpoint` handling.** On ingress, `origin_endpoint` = the DMRD
-  RptrId. On egress, the DMRD RptrId is the local system's ID, which is
-  standard. Preservation across the core happens in the frame header,
-  which is cleaner than hblink3's `PRESERVE_SOURCE_PEER` flag hack — that
-  flag exists only where OBP must carry the fact across a wire (§5).
+- **`origin_endpoint` handling.** On ingress it is the DMRD RptrId; on
+  egress the DMRD RptrId is the local system's ID, which is standard
+  (§1.2).
 
 ### 2.1 Local repeat — the client/server obligation (D-18)
 
@@ -248,10 +271,13 @@ The trunk (D-06), and the HBlink4 interconnect (D-03).
   config concept instead of two. hblink3 expands its `OBP_BRIDGES` rows
   into synthetic bridge members internally, so this is the same model
   stated directly (D-07, CONFIG §8).
-- **`preserve_source_peer`** carries `origin_endpoint` and `src_id` intact
-  across a federated hop, so the loop observations in ROUTING §8 hold
-  across instances. It is per-system config because it is only safe
-  between consenting endpoints.
+- **`preserve_source_peer`** (§1.2) chooses what goes in the DMRD
+  RptrId on this link: OBP convention is our `network_id`, and `true`
+  forwards the originating peer instead so it propagates end to end.
+  The reference implementation does not validate the field —
+  authentication is the HMAC plus the source socket — so both are safe;
+  it is per-system config because it is only *useful* when the far end
+  preserves it too.
 
 ---
 
@@ -391,7 +417,10 @@ directions, which is why D-28's fixed CC-1 tables cost nothing.
   keepalive state → `nx_core_system_state` plus events.
 - **Egress:** unpack the burst back to AMBE and IPSC's own fields, slot
   from the egress target, IPSC sequence and RTP fields owned here — the
-  ipsc2hbpc HBP→IPSC path, already solved.
+  ipsc2hbpc HBP→IPSC path, already solved. **The IPSC peer ID is always
+  rewritten to this system's own radio ID** — it is the authenticated
+  identity in the peer list, so unlike OBP there is no preserve option
+  (§1.2; dmrlink3 rewrites it unconditionally).
 - **Retarget rewrites the IPSC LC in place.** IPSC has the same
   LC-in-payload duplication HBP does: the packet carries both header
   src/dst and a DMR LC, and a member with a different TGID needs both
