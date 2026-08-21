@@ -217,12 +217,12 @@ lives in the validator, where it can produce a specific message with a
 remedy, rather than in the grammar, where it becomes boilerplate the
 operator has to get right by rote.
 
-| protocol | `slot` | `tgid` |
-|---|---|---|
-| `hbp`, `ipsc` | **required** | **required** |
-| `obp` | optional, defaults to 1 | **required** — it *is* the route |
-| `cc` | **error** — injected | **required** — the conduit's local TGID |
-| `xlx` | **error** — injected as 2 | **error** — injected as 9 |
+| protocol | `slot` | `tgid` | triggers |
+|---|---|---|---|
+| `hbp`, `ipsc` | **required** | **required** | allowed |
+| `obp` | optional, defaults to 1 | **required** — it *is* the route | **error** |
+| `cc` | **error** — injected | **required** — the conduit's local TGID | **error** |
+| `xlx` | **error** — injected as 2 | **error** — injected as 9 | **error** |
 
 Injected versus exposed is about observability, not taste (D-07). XLX's
 TS2/TG9 is a protocol constant whose wrong value is *silently* fatal — no
@@ -232,8 +232,8 @@ opposite: a wrong value shows up immediately as traffic under a
 consistent but unexpected talkgroup, and the CC-CC specification expects
 each end to configure it independently.
 
-Optional dynamic-rule fields on any member (ROUTING §4; omit them and the
-member is simply always active):
+Optional dynamic-rule fields (ROUTING §4; omit them and the member is
+simply always active):
 
 ```
 active   = true         # initial state
@@ -247,6 +247,20 @@ reset    = []           # trigger TGIDs that reset the timer only
 `timeout` is in **minutes** because that is what existing `rules.py`
 files mean, and silently reinterpreting an operator's `2` as two seconds
 would be the worst kind of migration bug.
+
+**Triggers are an error on bound endpoints.** `to_type`, `timeout`,
+`on`, `off`, and `reset` may not appear on an `obp`, `cc`, or `xlx`
+member. Triggers only ever change the state of members belonging to the
+system the traffic *arrived on* (ROUTING §4.2–§4.3), and a trunk,
+conduit, or reflector link has no user to key one up — so nothing could
+ever fire them. hblink3 hard-wires exactly these values inert for the
+same reason, which also keeps a TGID-heavy trunk out of the rule-timer
+sweep entirely.
+
+`active` is **not** a trigger and is allowed everywhere. It sets the
+member's initial state, and an operator can toggle it at runtime over
+the control socket (ROUTING §4.5) — which is how a trunk or reflector
+member gets taken out of a bridge without editing the file.
 
 ## 5. ACLs (D-12, ROUTING §2.1)
 
@@ -292,6 +306,10 @@ around rather than solved it. Specific messages the docs require:
   bridges, and saying that the connection *is* the bridge identity so
   the operator understands why (D-07).
 - A `cc` or `xlx` system named as a unit-call target.
+- A trigger field (`to_type`, `timeout`, `on`, `off`, `reset`) on a
+  bound-endpoint member, saying that nothing can fire it and pointing at
+  `active` plus the control socket as the way to take that member out of
+  a bridge (§4).
 - An XLX `module` given as a number rather than a letter A–Z, with the
   letter that number would correspond to.
 - A malformed ACL string, quoting the fragment that failed and restating
@@ -385,6 +403,9 @@ existing file and emits `rules.toml`:
   already expands these into synthetic bridge members internally, so this
   is a change of notation, not of meaning.
 - `XLX_BRIDGES` rows become bare `{ system = "..." }` members.
+  Neither table has trigger fields to carry — hblink3 hard-wires both
+  inert — so bound-endpoint members convert with no dynamic layer, which
+  is exactly what §4 requires.
 - ACLs and system stanzas come across from `hblink.cfg` in the same pass.
   `MODE: SERVER` becomes `mode = "server"`, `MODE: OUTBOUND` becomes
   `mode = "client"` (§2.4), and `MODE: OPENBRIDGE` becomes

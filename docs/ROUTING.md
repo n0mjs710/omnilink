@@ -185,6 +185,14 @@ reset[]  trigger TGIDs that reset its timer without changing state
 **At load:** `timer = now + timeout` if the member loads `active`,
 otherwise `timer = now`.
 
+**Bound endpoints carry no trigger state.** An `obp`, `cc`, or `xlx`
+member loads with `to_type = NONE` and empty trigger lists, and the
+validator rejects any attempt to configure otherwise (CONFIG §4): a
+trunk, conduit, or reflector link has no user to key a trigger TGID, and
+§4.2–§4.3 only ever act on members of the originating system. Such
+members are never visited by the sweep in §4.4. Their `active` flag
+still works and is still operator-controllable (§4.5).
+
 ### 4.1 Trigger timing is asymmetric, and deliberately so
 
 **Activation triggers fire on CALL_START.** They must, so that the header

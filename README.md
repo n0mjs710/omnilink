@@ -80,6 +80,31 @@ protocol of the named system decides what is required, optional, or an
 error — and when you get it wrong, the validator tells you which line and
 what to do about it.
 
+**Triggers and timers are per-member fields on the same line**, keeping
+their `rules.py` names and their units. Omit them and the member is
+simply always up, which is why the bridge above has none:
+
+```toml
+[[bridge]]
+name = "TAC-1"
+members = [
+  # Key up TG 8951 to connect this bridge; it drops after 10 idle
+  # minutes, or immediately if someone keys 4000.
+  { system = "KS-DMR", slot = 2, tgid = 8951, active = false,
+    to_type = "ON", timeout = 10, on = [8951], off = [4000], reset = [] },
+
+  { system = "KS-WEST", slot = 2, tgid = 8951, active = false,
+    to_type = "ON", timeout = 10, on = [8951], off = [4000] },
+]
+```
+
+`active`, `to_type`, `timeout`, `on`, `off`, and `reset` are hblink3's
+fields, unchanged — including `timeout` being in **minutes**, because
+that is what your existing rules mean and silently reinterpreting it as
+seconds would be the worst kind of migration bug. Full semantics in
+[`docs/CONFIG.md`](docs/CONFIG.md) §4 and
+[`docs/ROUTING.md`](docs/ROUTING.md) §4.
+
 ## Rules you can edit without fear
 
 Writing rules in native Python is unforgiving: one typo and the daemon
