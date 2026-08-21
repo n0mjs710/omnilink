@@ -386,6 +386,14 @@ tables. hblink3's `xlx_slot_type()` is not ported.
   the like) are rejected outright with the remedy in the message —
   hblink3's predecessor took numbers, so a migrating operator will try
   it.
+- **A–Z is wider than most reflectors, and the mismatch is silent.** A
+  stock xlxd builds with `NB_OF_MODULES 10` — modules A–J; the
+  `NB_MODULES_MAX 26` alternative exists but is commented out. We accept
+  A–Z because the protocol allows it and an operator can rebuild xlxd,
+  which means **a module the target reflector does not have is
+  configurable, validates cleanly, and simply never links** — no NAK, no
+  error, no symptom (§4.3). Confirm what the reflector actually runs
+  before configuring a module above J.
 - **Never a unit-call target.** Module selection *is* a private call to
   4001–4026, so a unit call reaching an XLX system could silently move
   the reflector into a different room for every user connected to it.
@@ -399,11 +407,8 @@ the link was attempted, and the dashboard must present it as an attempt
 rather than as a confirmed state. Verification is the reflector's own
 dashboard.
 
-Note also that a stock xlxd is built with `NB_OF_MODULES 10` (modules
-A–J); `NB_MODULES_MAX 26` exists but is commented out. A–Z is accepted
-because the protocol allows it and operators can rebuild, but a module
-the reflector does not have produces no link and no error — one more
-reason this section exists.
+It is also why a module the reflector does not have (§4.2) fails without
+reporting anything at all.
 
 ---
 

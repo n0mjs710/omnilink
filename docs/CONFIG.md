@@ -141,7 +141,9 @@ link_id = 17
 name = "XLX307-D"
 protocol = "xlx"
 server = "xlx307.example.net:62030"
-module = "D"                  # letter A-Z only; numbers are an error
+module = "D"                  # letter A-Z only; numbers are an error.
+                              # Most reflectors only have A-J -- a module
+                              # the far end lacks never links, silently.
 radio_id = 312000
 callsign = "W1ABC"
 ```
