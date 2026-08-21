@@ -4,8 +4,7 @@
 > design in [`docs/`](docs/) is normative and code is written to it, but
 > it is not frozen — see [`docs/DECISIONS.md`](docs/DECISIONS.md) for
 > what is settled and why. Implementation proceeds in gated phases
-> ([`PLAN.md`](PLAN.md)); nothing ships until it passes live on-air
-> verification.
+> ([`PLAN.md`](PLAN.md)).
 
 *Written for operators of DMR networks: people who have run c-Bridges,
 HBlink or DMRlink instances, or built out their corner of Brandmeister
@@ -106,20 +105,19 @@ seconds would be the worst kind of migration bug. Full semantics in
 [`docs/CONFIG.md`](docs/CONFIG.md) §4 and
 [`docs/ROUTING.md`](docs/ROUTING.md) §4.
 
-## Rules you can edit without fear
+## Rules files without python syntax
 
-Writing rules in native Python is unforgiving: one typo and the daemon
-does not come up. That is the part being fixed properly.
+Writing rules in native Python can be unforgiving: one typo or  and the 
+errant space and the daemon does not come up.
 
 - **Two files.** `omnilink.toml` holds systems, ports, and credentials
   and needs a restart. `rules.toml` holds bridges and ACLs and **reloads
   live**, on `SIGHUP` or a command.
 - **Validate, then swap.** A rules file that fails validation changes
   *nothing* — the daemon keeps routing on the rules it has and tells you
-  exactly what is wrong and how to fix it.
+  what is wrong and how to fix it.
 - **`omnilink --check-config`** runs that same validator against files on
-  disk, so a bad rules file gets caught in your pre-commit hook or deploy
-  script instead of on a live network.
+  disk, so a bad rules file gets caught you restart your live network.
 - **Calls in flight finish on the rules they started under.** Reloading
   during a conversation does not cut it off.
 - A **web rules editor** comes later ([`PLAN.md`](PLAN.md) phase 7), and
@@ -129,38 +127,36 @@ does not come up. That is the part being fixed properly.
 ## How routing behaves
 
 **Bridges work the way you expect.** A bridge is a named conference —
-think c-Bridge bridge group, or an hblink3 conference bridge — whose
-members are `(system, slot, talkgroup)`. Talkgroup numbers translate
-naturally across members. One talker holds a bridge at a time.
+no change from hblink3 or dmrlink3 — whose members are `(system, slot, 
+talkgroup)`. Talkgroup numbers translate naturally across members. 
+One talker holds a bridge at a time.
 
 **Hang time belongs to a repeater's channel, not to a bridge.** It keeps
 a physical timeslot assigned to a talkgroup so another talkgroup cannot
 seize it between transmissions, so it is configured per system and
-applied per timeslot. A hang timer on a *bridge* would refuse every
-contender, because every contender on a bridge is by definition on the
-same talkgroup — a round-table net would lose every second station.
+applied per timeslot.
 
-**Repeater service is built in.** An OmniLink HBP server repeats traffic
+**Repeater service is built in.** An OmniLink HBP system repeats traffic
 among its own repeaters and hotspots, filtered by per-repeater
 subscriptions. Subscriptions *select from what the system already
-carries*; they never create bridging. Routing stays in your rules.
+carries*; they never create bridging rules. This adds the best of
+HBlink4 with the structured transit routing capabilities of HBlink3.
 
 **One dashboard, because there is one event stream.** Every adapter and
 the router emit into a single ordered feed that drives one unified log
 and a live dashboard: per-system views like the HBlink and DMRlink
-dashboards you have seen, plus the view none of them could ever show —
-the bridge table itself, live, with every bridge, its members, their
-TS/TGID mappings, and who is talking.
+dashboards you have seen.
 
 ## What it is not
 
 - **Not a worldwide-network platform.** OmniLink targets the state,
   regional, or national-group level — roughly up to a hundred connected
-  systems per instance. Bigger footprints federate multiple instances
+  devices per instance. Bigger footprints federate multiple instances
   over OpenBridge, which keeps failure domains small. It is a tool for
-  building *your* network, not another Brandmeister.
+  building a club, statewide, regional or smaller national, network. It
+  is not for building another Brandmeister.
 - **Not a multi-mode gateway.** OmniLink is DMR, end to end. No
-  transcoding, no other digital modes, anywhere.
+  transcoding, no other digital modes, it is not DV switch.
 - **Not a stream doctor.** OmniLink forwards what it receives: late
   entries stay late entries, dropped bursts stay dropped, nothing is
   concealed or re-timed. DMR radios were engineered for exactly these
@@ -177,12 +173,6 @@ sharing their DSP and protocol code. Two TOML files. The dashboard is a
 separate Python web application fed by a local socket; the daemon runs
 fine without it.
 
-Existing networks do not migrate until they are ready: OmniLink connects
-to today's HBlink, DMRlink, c-Bridge, and Brandmeister worlds as a peer
-from day one, and each protocol's support is proven against live traffic
-— with clean audio, verified byte-exact against captured reference calls
-— before it is called done.
-
 ## The design documents
 
 In reading order:
@@ -198,9 +188,9 @@ In reading order:
 9. [`PLAN.md`](PLAN.md) — phased build plan with acceptance gates
 10. [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) — where implementation met the docs and something gave
 
-Questions and, once code exists, bug reports are welcome. The decision
-records document why things are the way they are — including the things
-that were tried on paper and rejected.
+Questions and, once code exists, (genuine) bug reports are welcome. The decision records document 
+why things are the way they are — including the things that were tried on paper and rejected. 
+Configuration and operational assistance are not provided.
 
 ## Heritage
 
