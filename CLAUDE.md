@@ -37,7 +37,8 @@ config reload," it is a leftover — treat it as absent and tell the owner.
   `grep -E 'pthread_|sem_|_Atomic|atomic_'` over `src/` returns nothing.
   That is the current design, not a taboo — but adding a thread is a
   design change for the owner to make, so stop and raise it rather than
-  introducing one. Preferred shape if it ever happens: lock-free SPSC.
+  introducing one. What is actually avoided is **queues and locks**, not
+  threads: prefer atomics over a ring, a ring over a lock.
 - **No malloc on the datapath.** Allocation happens in `*_new()`/init at
   startup. The single carve-out is a rules reload, which is control-plane
   work and is commented as such (D-23). Synthesize nothing.

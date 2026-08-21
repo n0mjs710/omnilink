@@ -79,16 +79,16 @@ fan-out that dominates the work (§1) fits inside one core at D-20 scope,
 so a thread would buy stall isolation and nothing else — and that is
 already bounded by a systemd watchdog plus instance federation.
 
-This is a preference with fallbacks, not a ban. If a thread ever serves
-lightweight, high-performance operation better, the preferred shape is
-one whose data crosses the boundary **atomically** —
-single-producer/single-consumer, lock-free — so the benefit arrives
-without locking overhead. Locks are the last resort and usually mean the
-split is in the wrong place.
+This is a preference with fallbacks, not a ban. Threads are not what is
+being avoided — **queues and locks are.** If a thread ever serves
+lightweight, high-performance operation better, prefer one that shares
+state through **atomics** alone; a lock-free ring is acceptable when
+packets rather than state must cross, but a ring is still a queue and
+costs latency, memory, and cache traffic. Locks are the last resort and
+usually mean the split is in the wrong place.
 
-The adapter contract is the seam that keeps this open: adapters could sit
-behind rings without the core changing. Adding a thread is a design
-change, made deliberately (D-08), not introduced mid-task.
+The adapter contract is the seam that keeps this open. Adding a thread is
+a design change, made deliberately (D-08), not introduced mid-task.
 
 ## 3. Module boundaries
 
