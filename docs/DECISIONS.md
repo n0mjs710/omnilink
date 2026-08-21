@@ -722,109 +722,37 @@ No data-call reassembly, ever, in the daemon.
 ## D-28 — Colour code is RF-local: never read, never rewrite, 1 when
 ## invented
 
-*(Added 2026-08-21.)*
+Colour code is an RF air-interface interference-mitigation mechanism: it
+lets a receiver ignore a co-channel repeater it is not meant to hear.
+That is the whole of its purpose. It has no meaning between repeaters,
+and each repeater applies its own before transmitting.
 
-Colour code is an **RF air-interface interference-mitigation mechanism**
-— it lets a receiver ignore a co-channel repeater it is not meant to
-hear. That is the whole of its purpose. Between repeaters it carries no
-meaning, and the far repeater applies its own before transmitting. It is
-therefore not a value OmniLink has any business acting on.
-
-Three rules, which are deliberately not the same rule:
+Three rules, deliberately not one rule:
 
 - **Never read it.** Not a routing key, not an ACL input, not a match
   condition, not a filter. Nothing in the daemon branches on a colour
-  code. This is the rule that matters most: an RF-local parameter
-  promoted to a gate is a misconfiguration generator that no operator
-  can diagnose, because the value is meaningless at the point where it
-  would be enforced.
+  code.
 - **Never rewrite it.** A passed-through burst keeps whatever the origin
-  stamped. Normalizing would mean re-encoding the slot type and both EMB
-  halves on every burst of every call on the dominant HBP path, to change
-  a value nobody downstream reads — which would forfeit D-05's
-  zero-re-encode property for nothing.
+  stamped, so a stream may legitimately carry a foreign colour code end
+  to end. Normalizing would re-encode the slot type and both EMB halves
+  on every burst on the dominant path, forfeiting D-05, to change a value
+  nobody downstream reads.
 - **Use 1 when you must invent one.** IPSC and CC-CC ingress construct
   bursts and the XLX module link builds one from nothing; all use
   `dmr/`'s precomputed CC-1 tables.
 
-So a stream may carry a foreign colour code end to end — a repeater at
-CC 7 reaching a repeater at CC 3 with the burst still stamped 7. That is
-already how hblink3 behaves, and bridging repeaters across different
-colour codes is routine and works, which is the practical proof that the
-destination regenerates.
+Colour code is not timeslot. A repeater must be *told* which slot a call
+belongs in, because it has two and cannot infer the choice — so slot is a
+routing key (D-04) and an explicit delivery parameter. A repeater is
+never told its colour code; it already knows it. Slot is information the
+network owes the repeater; colour code is information the repeater owes
+itself.
 
-### Colour code is not timeslot, and the difference is the whole point
+Consequences:
 
-Both look like "RF things," which invites the argument that if the router
-tracks one it should track the other. It should not, and the distinction
-is sharp:
-
-Note first what the two have in common, because it is where the sloppy
-version of this argument starts: **a repeater makes no forwarding
-decision from either one.** It does not consult the timeslot to decide
-whether to repeat a call, any more than it consults the colour code.
-Neither is a filter at the edge.
-
-The difference is what the repeater has to be **told**.
-
-**A repeater must be told the slot.** It has two of them and it cannot
-infer which one a given call belongs in, so something upstream has to
-supply that — and the only place with the information is the router.
-Hence slot is in the routing key (D-04), configured per member,
-arbitrated per `(system, slot)` (D-16), separately ACL'd, and carried to
-the adapter as an explicit delivery parameter. It is an instruction, not
-a decision the repeater makes.
-
-**A repeater is never told the colour code.** It already knows it — the
-value is a property of its own channel, from its own configuration, and
-it applies it when it keys up. Nothing upstream has anything to
-contribute, no alternative exists to select, and no downstream behavior
-changes with whatever we happen to send. The air interface is the only
-thing in the entire path that ever cares.
-
-So the two are opposite in the one way that matters here: slot is
-information the network owes the repeater, and colour code is
-information the repeater owes itself. A value in the second category has
-exactly one safe treatment — carry it if it is already there, invent a
-fixed one if it is not, and never branch on it.
-
-**Evidence this is settled rather than assumed:**
-
-- Retargeting structurally cannot touch it. hblink3's `embed_lc()`
-  (`bridge.py:90`) rebuilds a header as
-  `lc[0:98] + original[98:166] + lc[98:197]`, preserving exactly slot
-  type + sync + slot type, and a voice burst as
-  `original[0:116] + fragment + original[148:264]`, preserving both EMB
-  halves. The colour code lives in precisely the bits neither path
-  rewrites.
-- Both production C bridges already construct at CC 1 —
-  `ipsc2hbpc/src/translate.c:369-385` and `cc2obp/translate.c:110-114`
-  use the fixed `DMR_SLOT_TYPE_VHEAD`/`VTERM` constants — and ipsc2hbpc
-  carries the live IPSC bridge.
-- **MOTOTRBO repeaters within one IPSC system routinely run different
-  colour codes, and nothing on the IPSC side is affected** — operator
-  observation from production systems, and the decisive evidence for the
-  legacy half of this decision. IPSC's wire carries AMBE plus metadata
-  and no DMR burst at all, which is why `translate.c` has to construct
-  one; each repeater applies its own colour code from its codeplug when
-  it keys up. There is nothing to preserve in either direction, and a
-  colour code invented at the IPSC edge is discarded before it reaches
-  the air.
-- hblink3's `COLORCODE` config key is *announcement* metadata, not a
-  burst input: `CONFIGURING.md` calls it "Reported DMR color code," and
-  `hblink.py:641,687` parses it out of a connecting repeater's RPTC
-  record for display.
-
-**Consequences.** No `colorcode` key exists on any system for burst
-construction. `dmr/` is complete as vendored — no Golay(20,8) slot-type
-encoder is needed, and the phase-0 task to add one is withdrawn. hblink3
-needed `xlx_slot_type()` only because it let an XLX system declare a
-colour code; OmniLink does not make that choice.
-
-**The one place the value legitimately appears** is the HBP RPTC
-configuration record a peer-mode system sends at login, alongside
-callsign, frequencies, and power — pure self-description, exactly as
-`ipsc2hbpc/src/hbp.c:76` sends it today. It is named and documented as
-announcement metadata so it cannot drift into being a burst input or a
-gate. A master-mode system parses the same field from connecting
-repeaters for the dashboard, and does nothing else with it.
+- No `colorcode` key exists for burst construction. The value appears
+  only in `[system.announce]`, as HBP login self-description
+  (CONFIG.md §2.3), and a master parses the same field from connecting
+  repeaters for the dashboard.
+- `dmr/` is complete as vendored. No Golay(20,8) slot-type encoder is
+  needed, and hblink3's `xlx_slot_type()` is not ported.

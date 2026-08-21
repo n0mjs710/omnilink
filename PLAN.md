@@ -27,11 +27,9 @@ because they are what changed:
 - Lifted modules copied in: `dmr/`, `eventloop`, `toml`, `net`, `log`,
   `crypto`. `make test` runs their existing self-tests under this tree.
 - **`dmr/` is complete as vendored and needs no additions** (D-28).
-  Because constructed bursts are built at colour code 1, the precomputed
+  Constructed bursts are built at colour code 1, so the precomputed
   `DMR_SLOT_TYPE_VHEAD`/`VTERM` and `DMR_EMB` tables are exactly right.
-  An earlier draft of this plan called for adding a Golay(20,8) slot-type
-  encoder; that requirement existed only because colour code was
-  configurable, and it is withdrawn. Do not add one.
+  Do not add a Golay(20,8) slot-type encoder.
 
 **Gate:** clean build, lifted-module tests green on the dev server.
 

@@ -39,11 +39,6 @@ reasoning is not lost:
   core, so it does not violate "nothing synthesizes frames" — that rule
   governs fabricating call content into the routing path. Now stated
   directly in ADAPTERS.md §4.1 and D-14.
-- **`dmr/` cannot build a burst at a configured colour code as
-  vendored.** `DMR_SLOT_TYPE_VHEAD`/`VTERM` and `DMR_EMB` are precomputed
-  for colour code 1 and `golay.c` has no Golay(20,8) encoder. This was
-  briefly a phase-0 task to add one; **that task is withdrawn.** Colour
-  code turned out not to be configurable at all (D-28) — it is RF-local,
-  regenerated at the far repeater — so the CC-1 tables are exactly right
-  and `dmr/` is complete as vendored. The finding was real; the
-  conclusion drawn from it was wrong.
+- **`dmr/`'s slot-type, EMB, and sync tables are precomputed for colour
+  code 1.** That is the only colour code OmniLink ever builds at (D-28),
+  so `dmr/` is complete as vendored and needs no Golay(20,8) encoder.

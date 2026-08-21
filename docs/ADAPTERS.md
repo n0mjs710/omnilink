@@ -293,13 +293,8 @@ content into the routing path and is not weakened here.
 is built from this system's own radio ID and the target module TGID every
 time; its structure comes from `dmr/`'s fixed CC-1 tables.
 
-**Do not port hblink3's `xlx_slot_type()`.** That helper exists only
-because hblink3 lets an XLX system declare a colour code, and its own
-comment says so. OmniLink builds at CC 1 (D-28), so the precomputed
-`DMR_SLOT_TYPE_VHEAD`/`VTERM` constants are exactly right and no
-Golay(20,8) encoder is needed. xlxd does not inspect the colour code in
-any case — its five gates read the DMRD header byte and the sync
-pattern, never the slot type's CC nibble.
+**Do not port hblink3's `xlx_slot_type()`.** The link burst is built at
+colour code 1 from `dmr/`'s precomputed tables (D-28).
 
 ### 4.2 Binding and config
 
@@ -353,12 +348,9 @@ reason this section exists.
   49→72, BPTC LC, slot type, sync) per FRAME §4.1. IPSC is one of the two
   adapters that constructs rather than copies, so the LC must agree with
   the frame header. Structure (slot type, EMB, sync) comes from `dmr/`'s
-  fixed CC-1 tables. **IPSC carries no colour code on the wire in either
-  direction** — repeaters within one IPSC system routinely run different
-  colour codes with no effect on the IPSC side, each applying its own
-  from its codeplug (D-28) — so the value invented here is discarded
-  before it reaches the air. Call boundaries from IPSC burst types;
-  `origin_peer` from the IPSC RptrId field;
+  fixed CC-1 tables; IPSC carries no colour code on the wire in either
+  direction (D-28). Call boundaries from IPSC burst types; `origin_peer`
+  from the IPSC RptrId field;
   per-network keepalive state → `nx_core_system_state` plus events.
 - **Egress:** IPSC voice packet synthesis (the ipsc2hbpc HBP→IPSC path,
   already solved), slot from the egress target, IPSC sequence and RTP

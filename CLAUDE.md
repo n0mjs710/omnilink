@@ -52,11 +52,10 @@ Check here before "fixing" one of these:
   what existing `rules.py` files mean (CONFIG §4).
 - **IPSC egress emits terminators and comfort silence.** Sole carve-outs,
   IPSC wire only, and they never become frames (D-14, D-15).
-- **A burst can carry a "wrong" colour code end to end and that is
-  correct.** Never read it, never rewrite it, build at CC 1 (D-28). It is
-  RF-local; the far repeater supplies its own. `dmr/` needs no
-  Golay(20,8) encoder and hblink3's `xlx_slot_type()` is not ported.
-  `colorcode` exists only in `[system.announce]`, as login metadata.
+- **A burst can carry a "wrong" colour code end to end.** Never read it,
+  never rewrite it, build at CC 1 (D-28). `dmr/` needs no Golay(20,8)
+  encoder; `xlx_slot_type()` is not ported; `colorcode` exists only in
+  `[system.announce]`.
 
 ## Definition of done
 

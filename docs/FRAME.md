@@ -196,55 +196,6 @@ Two rules bind any adapter that must **construct** a burst:
    flavour, EMB, slot type — come from `dmr/`'s tables at colour code 1,
    per §4.1.2. They are not configuration.
 
-#### 4.1.2 Colour code is RF-local: never read it, never rewrite it, use
-#### 1 when you must invent one
-
-Colour code is an RF air-interface interference-mitigation mechanism: it
-lets a receiver ignore a co-channel repeater it is not meant to hear.
-That is the whole of its purpose. It has no meaning between repeaters,
-and the far repeater applies its own before transmitting. Three rules
-follow, and they are not the same rule (D-28):
-
-- **Never read it.** It is not a routing key, not an ACL input, not a
-  match condition, not a filter. Nothing in OmniLink branches on a colour
-  code, ever.
-- **Never rewrite it.** A passed-through burst keeps whatever the origin
-  put there. This is not deference — it is the zero-re-encode property of
-  D-05: normalizing the colour code would mean re-encoding the slot type
-  and both EMB halves on every burst of every call on the dominant path,
-  to change a value nobody downstream reads.
-- **Use 1 when you must invent one.** IPSC and CC-CC ingress construct
-  bursts, and the XLX module link builds one from nothing. All use
-  `dmr/`'s precomputed CC-1 tables.
-
-A consequence worth stating plainly, because it looks wrong: **a stream
-can carry a foreign colour code end to end.** A repeater at CC 7 sends a
-burst stamped CC 7, and it arrives at a repeater configured for CC 3
-still stamped 7. That is fine, and it is what hblink3 has done in
-production for years — which is itself the proof that the destination
-regenerates, since bridging repeaters on different colour codes is
-routine and works.
-
-**Retargeting never touches it.** hblink3's `embed_lc()` (`bridge.py:90`)
-is explicit: a header or terminator is rebuilt as
-`lc[0:98] + original[98:166] + lc[98:197]`, preserving bits 98–166 —
-which is exactly slot type, sync, slot type. A voice burst B–E is rebuilt
-as `original[0:116] + fragment + original[148:264]`, preserving both EMB
-halves. The colour code lives in the slot type and in EMB, and neither is
-ever re-encoded.
-
-So `dmr/` is **complete as vendored** for this project:
-`DMR_SLOT_TYPE_VHEAD`/`VTERM` and `DMR_EMB[5][16]` are precomputed at
-CC 1, which is all a constructing adapter needs. No Golay(20,8) slot-type
-encoder is required. hblink3 needed one (`xlx_slot_type()`) solely
-because it chose to let an XLX system declare a colour code; we do not
-make that choice, so the gap does not exist.
-
-Both production C bridges already work this way:
-`ipsc2hbpc/src/translate.c:369-385` and `cc2obp/translate.c:110-114`
-build head/term bursts from the CC-1 constants, and ipsc2hbpc carries the
-live IPSC bridge.
-
 #### 4.1.1 Retargeting
 
 When a stream is delivered to a member whose TGID differs from the
@@ -255,6 +206,25 @@ Generate the replacement LCs **once per stream per target**, then splice
 per burst by position. Do not rebuild per packet. hblink3's `gen_lcs()` /
 `embed_lc()` pair is the reference implementation and is known-correct in
 production.
+
+#### 4.1.2 Colour code is RF-local
+
+Colour code is an RF air-interface interference-mitigation mechanism. It
+has no meaning between repeaters; each applies its own before
+transmitting. Three rules, deliberately not one rule (D-28):
+
+- **Never read it.** Not a routing key, not an ACL input, not a match
+  condition, not a filter.
+- **Never rewrite it.** A passed-through burst keeps whatever the origin
+  stamped, so a stream may carry a foreign colour code end to end.
+  Rewriting would re-encode the slot type and both EMB halves on every
+  burst on the dominant path, which is what D-05 exists to avoid.
+- **Use 1 when you must invent one.** IPSC and CC-CC ingress and the XLX
+  module link build from `dmr/`'s precomputed CC-1 tables.
+
+Retargeting never touches it: the colour code lives in the slot type and
+in EMB, and §4.1.1 rewrites neither. `dmr/` is therefore complete as
+vendored — no Golay(20,8) slot-type encoder is required.
 
 ### 4.2 CALL_START — 33 bytes (`pfmt 0`) or 9 bytes (`pfmt 1`)
 
