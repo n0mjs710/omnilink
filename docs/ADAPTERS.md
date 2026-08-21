@@ -492,9 +492,11 @@ where peers need a reachable master even though traffic flows
 peer-to-peer, and its unconditional ingress feeds the dashboard and log
 without routing anything. Zero additional code; a supported shape.
 
-**The production KS-DMR bridge (ipsc2hbpc) keeps running untouched**
-until this adapter passes its live gate (D-24). Never double-bind UDP
-50000 on the production host.
+**Production stays on `ipsc2hbpc` until the phase-4 gate passes** (D-24).
+Until then this adapter runs as a test instance only, and it cannot share
+a host with the live bridge: an IPSC peer binds a UDP port — 50000 by
+convention — and the running `ipsc2hbpc` already holds it. Test from a
+different port or a different machine.
 
 ---
 

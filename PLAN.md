@@ -143,8 +143,9 @@ live network.
 ## Phase 4 — IPSC
 
 - Port ipsc2hbpc's IPSC engine plus the jitter-buffer egress clock. Peer
-  mode first — join the existing KS-DMR IPSC network from a **test**
-  instance — master mode second.
+  mode first — join the existing production IPSC network from a **test**
+  instance, on its own port or host (ADAPTERS §5.2) — master mode
+  second.
 - Vectors from live IPSC captures; we have production access and
   dmrlink3 as a reference decoder.
 
