@@ -16,7 +16,7 @@ not performance.
 **Size against egress fan-out, not ingress.** One hundred systems
 carrying a generous 200 concurrent streams is roughly 3,400 frames/s
 arriving. That is not the work. The work is delivery: a 20-member bridge
-turns each ingress frame into 19 sends, and an HBP master locally
+turns each ingress frame into 19 sends, and an HBP server locally
 repeating to 100 connected endpoints turns each frame into up to 100.
 Realistic worst case is on the order of 10⁵ `sendto` calls per second —
 two orders of magnitude above the ingress figure, and still comfortably
@@ -88,7 +88,7 @@ arbitration, the dynamic-rule engine, the unit route cache, loop
 observation, event sequencing. Policy lives here (D-21): the core decides
 *whether and where* a stream goes.
 
-**Adapters** — all protocol machinery: auth, keepalives, peer state,
+**Adapters** — all protocol machinery: auth, keepalives, endpoint state,
 FEC and framing codecs, TS/TGID rewrite execution, slot arbitration,
 hang, local repeat, cadence, pacing. Mechanism lives here (D-21):
 adapters decide *how* it goes.
@@ -113,7 +113,7 @@ would be half the daemon. It splits in two, along the seam that D-03
 already draws:
 
 - **`hbp_proto.c`** — the wire: DMRD/RPTL/RPTK framing, the login and
-  authentication state machine, keepalives and ping-loss tracking, peer
+  authentication state machine, keepalives and ping-loss tracking, client
   timeout. Knows sockets and bytes; knows nothing about bridges.
 - **`hbp_service.c`** — the repeater service: the endpoint table, local
   repeat, per-endpoint delivery filtering and subscriptions,
@@ -174,7 +174,7 @@ their genuinely protocol-specific parts, which was the point.
     arbitration, emit `call_end`, send nothing downstream (D-14);
   - dynamic-rule sweep, 10 s — ROUTING §4.4;
   - unit-cache sweep, on the same 10 s tick;
-  - adapters own their own protocol timers (keepalives, peer expiry,
+  - adapters own their own protocol timers (keepalives, endpoint expiry,
     playout ticks).
 - **Reload:** `SIGHUP` or control command → CONFIG §6.3.
 - **Shutdown:** SIGINT/SIGTERM → adapters send protocol goodbyes → flush
@@ -231,7 +231,7 @@ modules.
 | IPSC | `ipsc.c` 683 (peer only) + clocked egress from `translate.c` | **1.3–1.7 k** |
 | CC | `cccc_link.c` 759 + `cccc_ambe.c` 48 | **0.9–1.1 k** |
 | OBP | `obp_link.c` 178 | **0.3–0.45 k** |
-| XLX | HBP peer + module link + validation | **0.15–0.25 k** |
+| XLX | HBP client + module link + validation | **0.15–0.25 k** |
 | tests | ipsc2hbpc ships 298 lines, cc2obp 930; D-11 mandates three vector classes × five adapters, plus the parity suite | **2.0–3.0 k** |
 
 **≈8.5–11 kLOC plus ≈2–3 kLOC of tests.** Larger than a first pass
@@ -253,4 +253,4 @@ looks like a flag and is a state machine with asymmetric triggers.
 - No in-daemon HTTP. External surfaces are the protocol sockets, one Unix
   control socket, and one log file.
 - No talkback/echo adapter — `dmr-talkback` already does that as a
-  standalone HBP peer (D-26).
+  standalone HBP client (D-26).

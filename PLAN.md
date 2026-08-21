@@ -81,21 +81,21 @@ because they are what changed:
 
 ## Phase 2 — HBP + OBP + XLX (first real audio)
 
-- **HBP adapter**, split per ARCHITECTURE §3.1: `hbp_proto.c` (master
-  mode first, peer mode second) and `hbp_service.c` (endpoint table,
+- **HBP adapter**, split per ARCHITECTURE §3.1: `hbp_proto.c` (server
+  mode first, client mode second) and `hbp_service.c` (endpoint table,
   local repeat, static per-endpoint delivery filtering, endpoint
   classification). Conformance vectors cross-checked against
   `dmr_utils3` output.
 - **OBP adapter** — lift `obp_link.c`; per-peer stream pools and stream
   dedupe.
-- **XLX adapter** — HBP peer plus the module link. Port hblink3's
+- **XLX adapter** — HBP client plus the module link. Port hblink3's
   `tests/test_xlx_link.py`, which already encodes xlxd's five acceptance
   gates as assertions, including the reference vector that reproduces a
   known-good link burst byte for byte.
 - Live test on the dev server: a hotspot or repeater on OmniLink-HBP
   bridged to (a) another HBP system and (b) HBlink4 over OBP.
 
-**Gate:** clean audio and correct metadata (src, dst, peer on the far
+**Gate:** clean audio and correct metadata (src, dst, endpoint on the far
 dashboard), correct hang behavior, in **both directions** on both pairs —
 the live-verified standard used for the hblink4 OpenBridge work.
 

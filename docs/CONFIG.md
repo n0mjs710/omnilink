@@ -74,22 +74,22 @@ Per-system ACL keys are documented in §5.
 Full semantics live in ADAPTERS.md; this is the config surface.
 
 ```toml
-# --- HBP master (hblink3 "SERVER") ---
+# --- HBP server (hblink3 "SERVER") ---
 [[system]]
 name = "KS-DMR"
 protocol = "hbp"
-mode = "master"
+mode = "server"
 bind = "0.0.0.0:62031"
 passphrase = "s3cr3t"
 max_endpoints = 50
 repeat = true                 # in-adapter local repeat (D-18)
 
-# --- HBP peer (hblink3 "OUTBOUND") ---
+# --- HBP client (hblink3 "OUTBOUND") ---
 [[system]]
 name = "UPSTREAM"
 protocol = "hbp"
-mode = "peer"
-server = "master.example.net:62031"
+mode = "client"
+server = "hbp.example.net:62031"
 passphrase = "homebrew"
 radio_id = 312000
 callsign = "W1ABC"
@@ -123,7 +123,7 @@ preserve_source_peer = false
 [[system]]
 name = "MOTO-EAST"
 protocol = "ipsc"
-mode = "peer"                 # peer | master
+mode = "peer"                 # peer | master -- IPSC only (§2.4)
 bind = "0.0.0.0:50000"
 master = "10.0.0.1:50000"
 radio_id = 3120001
@@ -150,11 +150,31 @@ callsign = "W1ABC"
 `master`, and `target` becomes a stored `sockaddr` and no reconnect timer
 or datapath ever calls `getaddrinfo` again.
 
+### 2.4 Mode names follow each protocol's real architecture
+
+| protocol | modes | why |
+|---|---|---|
+| `hbp` | `server` / `client` | HBP is strictly client/server. A server accepts registrations from repeaters and hotspots and repeats among them; a client dials out and logs in. |
+| `ipsc` | `master` / `peer` | IPSC is a genuine peer-to-peer mesh. The master is simply the peer that holds the bootstrap member list; traffic flows peer to peer and does not transit it. |
+| `obp` | none | A point-to-point trunk between equals. |
+| `cc` | none | One conduit, one shape. |
+| `xlx` | none | Always an HBP client. |
+
+**Do not normalize these onto one pair of words.** `master`/`peer` on HBP
+is IPSC vocabulary borrowed by tools that came later, and it
+misdescribes the architecture — an HBP master is a server, and the
+repeaters below it are clients, not peers of anything. hblink3 already
+uses `SERVER`/`OUTBOUND` for this reason; OmniLink says `server` and
+`client` because that is what they are.
+
+Residual `master`/`peer` naming for HBP survives in places across the
+family repos. It is wrong there too, and it is not carried forward here.
+
 ### 2.3 `[system.announce]` — self-description, and nothing else
 
-HBP peer mode and XLX send an RPTC configuration record at login:
+HBP client mode and XLX send an RPTC configuration record at login:
 callsign, frequencies, power, location, and colour code. It is pure
-self-description, and a master-mode system parses the same record from
+self-description, and an HBP server parses the same record from
 connecting repeaters for the dashboard. Nothing in it affects routing.
 
 `colorcode` lives **only** here. It is announcement metadata and never a
@@ -247,7 +267,7 @@ Grammar, layering, enforcement order, and the OpenBridge slot-1 rider are
 normative in ROUTING §2.1. Two config-level rules:
 
 - **`use_acl = false` does not disable `reg_acl`.** Registration
-  admission is always enforced on master-mode systems.
+  admission is always enforced on systems that accept registrations.
 - **A malformed ACL is fatal, never ignored.** At startup the daemon
   refuses to start; on reload it refuses the swap and keeps the previous
   rules (§6).
@@ -314,7 +334,7 @@ Triggered by `SIGHUP` or the `reload` command on the control socket
    arena they opened under (ROUTING §3). The old arena is released when
    its last referencing stream ends.
 
-**What reload does not touch:** system stanzas, sockets, peer sessions,
+**What reload does not touch:** system stanzas, sockets, endpoint sessions,
 login state, or in-flight calls. A `rules.toml` that references a system
 which does not exist is a validation error, not an invitation to create
 one.
@@ -366,6 +386,9 @@ existing file and emits `rules.toml`:
   is a change of notation, not of meaning.
 - `XLX_BRIDGES` rows become bare `{ system = "..." }` members.
 - ACLs and system stanzas come across from `hblink.cfg` in the same pass.
+  `MODE: SERVER` becomes `mode = "server"`, `MODE: OUTBOUND` becomes
+  `mode = "client"` (§2.4), and `MODE: OPENBRIDGE` becomes
+  `protocol = "obp"`.
 
 **It reports what it cannot represent rather than guessing**, and its
 output is run through `--check-config` before it is offered to the

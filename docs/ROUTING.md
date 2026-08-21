@@ -13,8 +13,8 @@ from it, the departure is called out explicitly and marked
 
 ## 1. Vocabulary
 
-- **System** — one configured protocol instance: an HBP master, an HBP
-  peer, an IPSC network, an OBP link, a CC-CC conduit, an XLX module
+- **System** — one configured protocol instance: an HBP server, an HBP
+  client, an IPSC network, an OBP link, a CC-CC conduit, an XLX module
   connection. One `[[system]]` stanza. Immutable after startup (D-09),
   indexed by a `uint16_t` used as `origin_system` in the frame.
 - **Bridge** — a named conference, and the unit of routing. A bridge is
@@ -24,9 +24,11 @@ from it, the departure is called out explicitly and marked
   the reloadable rules table (D-09).
 - **Stream** — one transmission, keyed `(origin_system, stream_tag)`,
   bounded by CALL_START … CALL_END or by timeout.
-- **Endpoint** — a device below a system: one repeater or hotspot on an
-  HBP master, one peer on an IPSC network. The core routes to *members*,
-  never to endpoints (§5).
+- **Endpoint** — a device below a system: a client (repeater or hotspot)
+  on an HBP server, a peer on an IPSC network. The neutral cross-protocol
+  term; each protocol's own term is used when speaking about that
+  protocol (ADAPTERS.md §2). The core routes to *members*, never to
+  endpoints (§5).
 
 ## 2. Ingress
 
@@ -59,7 +61,7 @@ validator's error text says so.
 
 | ACL | Applies to | Range | Notes |
 |---|---|---|---|
-| `reg_acl` | endpoint registration (login) | 1 … 4294967295 | master-mode systems only; outbound and OBP links accept no registrations. **Always enforced** — `use_acl` cannot disable it. |
+| `reg_acl` | endpoint registration (login) | 1 … 4294967295 | HBP server-mode and IPSC master-mode systems only; outbound links and OBP accept no registrations. **Always enforced** — `use_acl` cannot disable it. |
 | `sub_acl` | source radio ID of a call | 1 … 16776415 | every voice and data stream |
 | `tgid_ts1_acl` | destination TGID on slot 1 | 1 … 16776415 | |
 | `tgid_ts2_acl` | destination TGID on slot 2 | 1 … 16776415 | |
@@ -390,7 +392,7 @@ adapter owes a loopback-identity conformance vector (D-11, FRAME.md §7).
    circuit breaker that temporarily disables the offending member is
    available later as policy (D-21).
 5. **Federation preserves origin metadata.** OBP with
-   `PRESERVE_SOURCE_PEER` keeps `origin_peer` and `src_id` intact across
+   `PRESERVE_SOURCE_PEER` keeps `origin_endpoint` and `src_id` intact across
    instances (D-06), so these observations hold across federated cores.
    TTL fields remain deliberately absent.
 
@@ -399,7 +401,7 @@ adapter owes a loopback-identity conformance vector (D-11, FRAME.md §7).
 - Parse payloads. Ever. It routes on the frame header (D-25).
 - Track per-member delivery outcomes (D-17 — that is what events are
   for).
-- Hold slot state, hang state, or peer state (D-16, D-17).
+- Hold slot state, hang state, or endpoint state (D-16, D-17).
 - Resolve names or IDs (D-10).
 - Synthesize a frame, a header, or a terminator (D-14).
 - Allocate on the datapath (D-23).

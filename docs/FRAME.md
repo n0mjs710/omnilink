@@ -33,8 +33,9 @@ offset  size  field
 16       2    origin_system  index into the core's system table
 18       1    vseq:3 (hi) | origin_slot:2 | rsvd:3   §1.1
 19       1    payload_len    bytes of payload[] that are meaningful
-20       4    origin_peer    24-bit radio ID of originating repeater/
-                             peer (0 = unknown); top octet zero
+20       4    origin_endpoint 24-bit radio ID of the originating
+                             repeater, hotspot, or peer (0 = unknown);
+                             top octet zero
 24       4    reserved       zero u32 — primary expansion (§6.1)
 28      36    payload        §4, zero-padded to 36
 ------  ----
@@ -96,7 +97,7 @@ explicit shift/mask accessor macros for every packed field.
   (ADAPTERS.md §1), from bridge member config or from the unit route
   cache.
 
-`src_id` / `dst_id` / `origin_peer` top octets: a DMR ID is 24 bits,
+`src_id` / `dst_id` / `origin_endpoint` top octets: a DMR ID is 24 bits,
 period — no wider form ever appears over the air (the IPv4-like 4-byte ID
 form exists only logically inside radios passing data). The fields are
 4-byte for alignment; the top octets are reserved-zero (§6.1), and config
@@ -266,7 +267,7 @@ of VOICE frames the ingress adapter forwarded.
 **Exists only on a real protocol terminator.** When a stream just stops,
 the core's timeout frees state, releases arbitration, and emits the
 `call_end` event — nothing is synthesized downstream. Every far edge
-(MMDVM, MOTOTRBO, HBP masters) has native loss-of-signal handling,
+(MMDVM, MOTOTRBO, HBP servers) has native loss-of-signal handling,
 because loss of signal is the RF world's steady state (D-13, D-14). The
 one carve-out is what an IPSC *egress* puts on its own wire, which is
 protocol machinery, not a frame (D-14).
@@ -325,7 +326,7 @@ A stream is identified core-wide by `(origin_system, stream_tag)`.
    need beyond that defines a chained-fragment scheme under a new type
    using `NXF_FRAG` — the slot size never grows.
 7. **Unit and group are equal citizens from day one.** `NXF_UNIT`,
-   `dst_id`, `origin_peer`, and `origin_slot` ride in every frame, so
+   `dst_id`, `origin_endpoint`, and `origin_slot` ride in every frame, so
    unit routing (ROUTING §6) needs no frame change when it lands.
 
 ### 6.1 Expansion reserves, layered cheapest-first

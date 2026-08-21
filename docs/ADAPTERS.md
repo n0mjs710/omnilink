@@ -38,7 +38,7 @@ typedef struct {
 void nx_core_ingress(const nx_frame *f);
 void nx_core_system_state(uint16_t sys, uint32_t endpoint, bool up);
 void nx_event_emit(/* subsys, sys, ev, lvl, fields... */);
-bool nx_acl_check_reg(uint16_t sys, uint32_t peer_id);   /* §1.2 */
+bool nx_acl_check_reg(uint16_t sys, uint32_t endpoint_id); /* §1.2 */
 ```
 
 Everything is a direct synchronous call on one thread — no queues, no
@@ -65,7 +65,8 @@ semantics lie.
 
 - All protocol machinery: auth, registration, keepalives, endpoint state.
 - Present voice as the 33-byte DMR burst (FRAME §4.1); assign
-  `stream_tag`; stamp `origin_system`, `origin_peer`, and `origin_slot`.
+  `stream_tag`; stamp `origin_system`, `origin_endpoint`, and
+  `origin_slot`.
   For burst-native protocols (HBP, OBP, XLX) this is a copy. For
   bare-AMBE protocols (IPSC, CC) the adapter *builds* the burst with
   `dmr/`, with the LC agreeing with the frame header and every
@@ -119,7 +120,7 @@ Split by what the core can see (D-21):
 - Follow the frame's `vseq` faithfully; use a local A–F counter only on
   `vseq = 7`. For a headerless stream, build a minimal LC from the
   frame's src/dst and emit **no** wire header (FRAME §4.2).
-- **Event every drop** — `slot_busy`, `pfmt_unsupported`, `peer_down` —
+- **Event every drop** — `slot_busy`, `pfmt_unsupported`, `endpoint_down` —
   so the log and dashboard can join the core's forwarded-to *intent* with
   the edge's *outcome* (D-17). Nothing is reported back to the core; it
   keeps forwarding, and that is fine.
@@ -143,9 +144,21 @@ The dominant transport (D-05), and the only adapter split across two
 files (ARCHITECTURE §3.1): `hbp_proto.c` for the wire, `hbp_service.c`
 for the repeater service.
 
-- **Modes:** `master` — serve MMDVM repeaters and hotspots, the primary
-  mode; and `peer` — dial out to an existing master, useful for migration
-  and for hanging OmniLink off a legacy HBlink3 site.
+**HBP is client/server, and the vocabulary matters.** A server accepts
+registrations from repeaters and hotspots and repeats among them; a
+client dials out and logs in. It is never "master and peer" — that is
+IPSC's vocabulary, borrowed by tools that arrived after it, and it
+misdescribes the architecture. IPSC keeps `master`/`peer` because IPSC
+genuinely is a peer-to-peer mesh whose master only holds the bootstrap
+list (§5.2). Both are correct; neither is the other.
+
+- **Modes:** `server` — serve MMDVM repeaters and hotspots, the primary
+  mode; and `client` — dial out to an existing server, useful for
+  migration and for hanging OmniLink off a legacy HBlink3 site.
+- **Devices below an HBP server are clients.** "Endpoint" is the neutral
+  cross-protocol term used where the core and the event schema must span
+  protocols (ROUTING §1, EVENTS §4.1); "client" is the word used when
+  speaking about HBP.
 - **Reuse:** the login/auth state machine and DMRD codec conventions from
   hblink3's `hblink.py` and hblink4's `protocol.py` as semantic
   reference; the C peer-mode engine from `ipsc2hbpc/src/hbp.c`.
@@ -160,7 +173,7 @@ for the repeater service.
   (FRAME §4.1.1). New HBP `stream_id` per stream, slot from the egress
   target, arbitration via `channel.c`. No pacing: forward on arrival, as
   hblink3 and hblink4 always have.
-- **`origin_peer` handling.** On ingress, `origin_peer` = the DMRD
+- **`origin_endpoint` handling.** On ingress, `origin_endpoint` = the DMRD
   RptrId. On egress, the DMRD RptrId is the local system's ID, which is
   standard. Preservation across the core happens in the frame header,
   which is cleaner than hblink3's `PRESERVE_SOURCE_PEER` flag hack — that
@@ -168,7 +181,7 @@ for the repeater service.
 
 ### 2.1 Local repeat — the client/server obligation (D-18)
 
-A master must repeat traffic among its own connected endpoints; that is
+A server must repeat traffic among its own connected clients; that is
 what being the server means, and it happens **inside `hbp_service.c`**,
 without transiting the core (which still sees the stream exactly once,
 via unconditional ingress).
@@ -190,7 +203,7 @@ as core egress, and are evented with `local:true` (D-17).
 
 Flag hotspot versus repeater the way HBlink4 does — from the login
 software and package ID fields already parsed at RPTC time, **never** by
-parsing radio IDs — and carry it in `repeater_connected` events.
+parsing radio IDs — and carry it in `endpoint_connected` events.
 Dashboard color only; no behavior attaches (D-03).
 
 One HBP system with no bridge members *is* a small standalone server:
@@ -222,7 +235,7 @@ The trunk (D-06), and the HBlink4 interconnect (D-03).
   config concept instead of two. hblink3 expands its `OBP_BRIDGES` rows
   into synthetic bridge members internally, so this is the same model
   stated directly (D-07, CONFIG §8).
-- **`preserve_source_peer`** carries `origin_peer` and `src_id` intact
+- **`preserve_source_peer`** carries `origin_endpoint` and `src_id` intact
   across a federated hop, so the loop observations in ROUTING §8 hold
   across instances. It is per-system config because it is only safe
   between consenting endpoints.
@@ -240,7 +253,7 @@ the module.
 It is a distinct adapter type for config clarity, event attribution, and
 its own conformance vectors — not because the protocol differs.
 
-- **Reuse:** the HBP peer-mode engine in full (§2) — login, keepalives,
+- **Reuse:** the HBP client-mode engine in full (§2) — login, keepalives,
   DMRD codec, stream mapping.
 - **Reference implementation:** hblink3's `send_xlx_link()` /
   `xlx_link_module()` and `tests/test_xlx_link.py`, which encode xlxd's
@@ -349,7 +362,7 @@ reason this section exists.
   adapters that constructs rather than copies, so the LC must agree with
   the frame header. Structure (slot type, EMB, sync) comes from `dmr/`'s
   fixed CC-1 tables; IPSC carries no colour code on the wire in either
-  direction (D-28). Call boundaries from IPSC burst types; `origin_peer`
+  direction (D-28). Call boundaries from IPSC burst types; `origin_endpoint`
   from the IPSC RptrId field;
   per-network keepalive state → `nx_core_system_state` plus events.
 - **Egress:** IPSC voice packet synthesis (the ipsc2hbpc HBP→IPSC path,
@@ -472,7 +485,7 @@ burst form, so it ports as a lift rather than a rewrite.
 ## 7. What is not an adapter
 
 - **Talkback / echo.** `dmr-talkback` already does this as a standalone
-  HBP peer and works (D-26). Building it a second time inside OmniLink
+  HBP client and works (D-26). Building it a second time inside OmniLink
   would duplicate shipped software for no gain.
 - **Any non-DMR mode.** OmniLink is DMR end to end (D-02). A proposal
   requiring a second air interface is out of scope, not deferred.

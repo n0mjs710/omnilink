@@ -77,7 +77,7 @@ of matching bridges and fans one ingress stream to every one of them
 (`bridge.py`). OmniLink does the same, for two reasons.
 
 **Slot is a real distinction on slotted systems.** TG 3120 on TS1 and TG
-3120 on TS2 of one HBP master are two logical channels to the operator,
+3120 on TS2 of one HBP server are two logical channels to the operator,
 they are separately ACL'd (hblink3 has `TGID_TS1_ACL` and
 `TGID_TS2_ACL`, not one TGID ACL), and operators route them differently.
 A router that cannot express that cannot express what it is replacing.
@@ -85,7 +85,7 @@ A router that cannot express that cannot express what it is replacing.
 **The alternative was tried on paper and its own escape hatch does not
 exist.** Keying on TGID alone requires rejecting a member that appears
 in two bridges, and the remedy such a rejection has to offer the
-operator is "model it as two systems." For an HBP master serving real
+operator is "model it as two systems." For an HBP server serving real
 repeaters that is impossible — the repeaters are connected to one
 socket. A validation rule whose fix-it text cannot be followed is not a
 constraint, it is a wall.
@@ -528,7 +528,7 @@ truth and all slot arbitration.
 Operator visibility is therefore reconstructed from the event stream
 rather than from protocol: the core's `call_start` states **intent** (the
 members a stream was forwarded to); adapters event their **outcomes**
-(`slot_busy`, `peer_down`, `pfmt_unsupported`); the log and dashboard
+(`slot_busy`, `endpoint_down`, `pfmt_unsupported`); the log and dashboard
 join the two. The core does not track per-member outcomes and keeps
 forwarding regardless — wasted frames cost nothing at this scale, and
 slot scarcity is mechanism, not policy (D-21).
@@ -551,7 +551,7 @@ Two riders that are easy to get wrong:
 
 ## D-18 — Local repeat lives in the HBP adapter; IPSC has none
 
-An HBP master must repeat traffic among its own connected endpoints —
+An HBP server must repeat traffic among its own connected clients —
 that is the client/server obligation — and it does so **inside the
 adapter**, never via the core. The core still sees every stream exactly
 once, because ingress is unconditional (ROUTING.md §2). Per-repeater
@@ -629,7 +629,7 @@ distribution would be policy at the edge).
 Both ancestors resolve hostnames *inside* the connect path (`cc2obp/net.c`,
 `ipsc2hbpc/src/net.c`), reached from reconnect timers. At one or two
 links that is invisible. At ~100 systems, many outbound by hostname (HBP
-peer, XLX, OBP), **one unresponsive resolver blocks the entire daemon**
+client, XLX, OBP), **one unresponsive resolver blocks the entire daemon**
 for the resolver timeout and drops every call on every system — and
 systemd's watchdog does not fire, because the process is alive, just
 deaf.
@@ -706,7 +706,7 @@ not transfer.
 
 *Talkback/echo is deliberately not an OmniLink feature.* It exists as a
 finished standalone product (`dmr-talkback`) that connects as an ordinary
-HBP peer, and building it a second time inside OmniLink would duplicate
+HBP client, and building it a second time inside OmniLink would duplicate
 shipped, working software for no gain.
 
 ## D-27 — Data calls ride opaquely, later
@@ -752,7 +752,7 @@ Consequences:
 
 - No `colorcode` key exists for burst construction. The value appears
   only in `[system.announce]`, as HBP login self-description
-  (CONFIG.md §2.3), and a master parses the same field from connecting
+  (CONFIG.md §2.3), and a server parses the same field from connecting
   repeaters for the dashboard.
 - `dmr/` is complete as vendored. No Golay(20,8) slot-type encoder is
   needed, and hblink3's `xlx_slot_type()` is not ported.

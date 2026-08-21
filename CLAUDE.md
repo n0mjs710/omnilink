@@ -52,6 +52,11 @@ Check here before "fixing" one of these:
   what existing `rules.py` files mean (CONFIG §4).
 - **IPSC egress emits terminators and comfort silence.** Sole carve-outs,
   IPSC wire only, and they never become frames (D-14, D-15).
+- **HBP is `server`/`client`; IPSC is `master`/`peer`.** Not a style
+  inconsistency — HBP is strictly client/server, IPSC is a real
+  peer-to-peer mesh whose master just holds the bootstrap list. Do not
+  normalize them (CONFIG §2.4). `endpoint` is the neutral term where the
+  core or event schema must span protocols.
 - **A burst can carry a "wrong" colour code end to end.** Never read it,
   never rewrite it, build at CC 1 (D-28). `dmr/` needs no Golay(20,8)
   encoder; `xlx_slot_type()` is not ported; `colorcode` exists only in

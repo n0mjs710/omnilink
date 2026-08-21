@@ -103,18 +103,34 @@ fields.** Plane: S = systems, B = bridge, G = global.
 |---|---|---|---|
 | `startup`, `shutdown` | G | version, config summary | core |
 | `system_up`, `system_down` | S | | core, via `nx_core_system_state` |
-| `repeater_connected`, `repeater_lost` | S | id, callsign if known, address, endpoint class | adapters |
-| `call_start` | B+S+G | bridge(s), or `local:true`; src; dst; origin system/peer/slot; stream key; unit and headerless flags; **members forwarded to** (intent) | core; adapters for local repeat |
+| `endpoint_connected`, `endpoint_lost` | S | id, callsign if known, address, `kind` (§4.1), endpoint class | adapters |
+| `call_start` | B+S+G | bridge(s), or `local:true`; src; dst; origin system/endpoint/slot; stream key; unit and headerless flags; **members forwarded to** (intent) | core; adapters for local repeat |
 | `call_end` | B+S+G | + `duration_s`, `frames`, `reason` (`term`\|`timeout`) | core; adapters for local |
 | `stream_contention` | B | bridge, loser src/system, holder src/system, `same_src` flag (D-19) | core |
 | `loop_suspected` | B | bridge, src, systems involved, capture count and gaps — **alarm class**, surface prominently (D-19) | core |
-| `slot_busy`, `pfmt_unsupported`, `peer_down` | S | system, slot, dropped stream, holder (including local holders) — the **outcome** half; join with `call_start` intent (D-17) | adapters |
+| `slot_busy`, `pfmt_unsupported`, `endpoint_down` | S | system, slot, dropped stream, holder (including local holders) — the **outcome** half; join with `call_start` intent (D-17) | adapters |
 | `bridge_member_state` | B | bridge, member, `active`, cause (`trigger_on`\|`trigger_off`\|`timeout`\|`operator`\|`reload`) | core |
 | `acl_denied` | G | acl that fired, system, src or tgid, slot — rate-limited (ROUTING §2.1) | core; adapters for `reg` |
 | `reload_ok`, `reload_failed` | G | generation, findings (all of them, verbatim) | core |
 | `xlx_link_sent` | S | module, target tgid, unlink-then-link — **attempt only**; XLX never acknowledges a link, so this must never render as confirmed state (ADAPTERS §4.3) | xlx |
 | `unbridged`, `unit_no_route`, `malformed`, `stream_pool_full` | G | rate-limited diagnostics | both |
 | `stats` | S+G | per-system counter snapshot, 10 s cadence | adapters + core; the event module caches the latest per system for snapshot replay |
+
+### 4.1 `kind` — each protocol's own word for its devices
+
+The schema is neutral so one dashboard can render every system, but the
+operator's vocabulary is not neutral: an HBP system has **clients**
+(repeaters and hotspots) and an IPSC system has **peers**. Those are not
+interchangeable words, and flattening them would misdescribe both
+architectures (ADAPTERS.md §2).
+
+So `endpoint_connected` and `endpoint_lost` carry a `kind` field —
+`client` on HBP and XLX, `peer` on IPSC and OBP — and the dashboard
+renders that word. Neutral schema, correct vocabulary, one code path.
+
+The existing family dashboards resolved the same tension by letting each
+codebase use its own device term. OmniLink spans protocols in one
+codebase, so it carries the term as data instead.
 
 ## 5. Unified text log
 
@@ -205,7 +221,7 @@ is not (D-10).
   dmrlink3 dashboards — they are already good, and this is a re-skin fed
   by a richer unified feed. The bridge plane is the new work: bridge
   status table plus the bridge matrix.
-- **ID databases:** subscriber, peer, and talkgroup name resolution
+- **ID databases:** subscriber, repeater, and talkgroup name resolution
   happens here, from JSON files as in the existing dashboards. **Never in
   the daemon** (D-10).
 - Ping-quality diagnostics carry over only where the protocol makes them

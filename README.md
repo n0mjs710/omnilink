@@ -19,7 +19,7 @@ bridge rules, with one dashboard and one log.**
 
 | It speaks | So it connects to |
 |---|---|
-| HBP (master and peer) | MMDVM repeaters and hotspots, HBlink masters |
+| HBP (server and client) | MMDVM repeaters and hotspots, HBlink servers |
 | OpenBridge | Brandmeister, HBlink3/4, IPSC2, anything OBP |
 | XLX | XLX reflector modules |
 | IPSC (peer and master) | MOTOTRBO repeater systems |
@@ -114,7 +114,7 @@ applied per timeslot. A hang timer on a *bridge* would refuse every
 contender, because every contender on a bridge is by definition on the
 same talkgroup — a round-table net would lose every second station.
 
-**Repeater service is built in.** An OmniLink HBP master repeats traffic
+**Repeater service is built in.** An OmniLink HBP server repeats traffic
 among its own repeaters and hotspots, filtered by per-repeater
 subscriptions. Subscriptions *select from what the system already
 carries*; they never create bridging. Routing stays in your rules.
