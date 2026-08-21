@@ -9,10 +9,16 @@ implementers**. When in doubt, open `ipsc2hbpc/src/` and match it.
 
 - C11 (`-std=c11`), POSIX 2008 (`-D_POSIX_C_SOURCE=200809L`).
 - `-Wall -Wextra -Werror -O2`; builds warning-clean or it doesn't merge.
-- Dependencies: libc (librt if needed). **Nothing else — not even
-  libpthread; the daemon is single-threaded by design (D-08).** No
-  libevent, no OpenSSL (crypto.c carries its own SHA/HMAC), no cJSON
-  (events are printf-formatted; we only *emit* JSON, never parse it in C).
+- **Dependencies: the C11 standard library, POSIX 2008, and glibc, and
+  nothing else** (D-32). The test is whether a thing can be counted on
+  to still be there and still behave the same way years from now — not
+  whether it is popular. libpthread is out for a different reason: the
+  daemon is single-threaded by design (D-08).
+- Not used, and each for a stated reason: no OpenSSL (`crypto.c` carries
+  its own SHA/HMAC), no cJSON (events are `printf`-formatted; the daemon
+  emits JSON and never parses it), no libevent (`eventloop.c` is lifted
+  and proven). None of these is a quality judgement — they are simply
+  unnecessary here.
 - One `Makefile`, plain make, `make`/`make test`/`make clean`. Objects live
   beside sources (house habit), `.gitignore` covers them.
 

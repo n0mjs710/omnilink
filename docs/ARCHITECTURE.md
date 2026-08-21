@@ -1,8 +1,10 @@
 # ARCHITECTURE.md — Process Model, Modules, Memory
 
-C11, single binary, **single thread**, zero external library dependencies
-(libc only — not even libpthread). This document defines the scope, the
-process model, the module boundaries, and the memory discipline. What crosses the
+C11, single binary, **single thread**, depending only on what is
+effectively part of C — the standard library, POSIX, and glibc (D-32).
+libpthread is excluded separately, by the single-thread model itself
+(D-08). This document defines the scope, the process model, the module
+boundaries, and the memory discipline. What crosses the
 adapter/core boundary is in FRAME.md; what the core does with it is in
 ROUTING.md; how it is configured is in CONFIG.md.
 
@@ -187,7 +189,7 @@ their genuinely protocol-specific parts, which was the point.
 
 ```
 omnilink/
-├── Makefile                  # -std=c11 -Wall -Wextra -Werror -O2; libc only
+├── Makefile                  # -std=c11 -Wall -Wextra -Werror -O2 (D-32)
 ├── omnilink.toml.sample
 ├── rules.toml.sample
 ├── src/

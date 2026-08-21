@@ -22,7 +22,7 @@ because they are what changed:
 ## Phase 0 — Skeleton
 
 - Repo scaffolding: Makefile (`-std=c11 -Wall -Wextra -Werror -O2`,
-  libc only), directory layout per ARCHITECTURE §6.
+  no dependencies beyond D-32), directory layout per ARCHITECTURE §6.
 - Lifted modules copied in: `dmr/`, `eventloop`, `toml`, `net`, `log`,
   `crypto`. `make test` runs their existing self-tests under this tree.
 - **`dmr/` is complete as vendored and needs no additions** (D-28).

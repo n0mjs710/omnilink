@@ -18,7 +18,7 @@ changes are the thing operators actually want, sometimes hourly.
 TOML because it is already the house format across `ipsc2hbpc`, `cc2obp`,
 and `dmr-talkback`, its parser is already vendored and proven, and
 consistency across the family is worth more than any marginal syntax
-preference. YAML has no dependency-free C parser worth vendoring and
+preference. YAML has no parser meeting D-32 worth vendoring and
 would break D-08. JSON has no comments. SQLite is a dependency and would
 end git-tracked, diffable, reviewable configs — which is how these
 networks are actually operated.

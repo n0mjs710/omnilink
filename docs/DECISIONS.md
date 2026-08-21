@@ -183,10 +183,11 @@ first because a bridge's membership stays in one readable place, which is
 the daily operation. Revisit on operator experience and settle before
 wide deployment; the validator's remedy text is the mitigation meanwhile.
 
-## D-08 — Single-threaded C11, one event loop, libc only
+## D-08 — Single-threaded C11, one event loop
 
 One thread, one `ev_loop`, direct function calls. No libpthread, atomics,
-locks, queues, or rings. Zero external library dependencies.
+locks, queues, or rings. (libpthread is excluded by *this* decision, not
+by the dependency policy in D-32.)
 
 At D-20 scope there is no performance argument for concurrency, and the
 one real thing threads would buy — stall isolation — is already bounded
@@ -196,8 +197,9 @@ are lost exactly as they would be at an RF site taking a power hit.
 
 **Why C:** neither operational pain being solved here (unforgiving rules
 files, chained daemons) is a language problem — D-09 and D-03 fix those.
-C is chosen for a dependency-free single binary and the direct lift of
-field-proven code that already exists in the right shape. The cost is
+C is chosen for a single binary with no fragile dependencies (D-32) and
+the direct lift of field-proven code that already exists in the right
+shape. The cost is
 plain: the ACL grammar, the dynamic-rule engine, and the validator are
 where C buys least and costs most, and D-12 puts all three on the
 critical path.
@@ -222,7 +224,7 @@ Three binding properties, mechanism in CONFIG §6:
 
 **TOML**, for consistency: already the house format across ipsc2hbpc,
 cc2obp, and dmr-talkback, with the parser already vendored. YAML has no
-dependency-free C parser worth vendoring (D-08). JSON has no comments.
+parser meeting D-32 worth vendoring. JSON has no comments.
 SQLite would end git-tracked, diffable configs.
 
 **The web editor is a separate application and the file stays
@@ -637,3 +639,40 @@ are in ADAPTERS §1.3.
 core, so the core's view is of admitted traffic. The adapter events the
 denial, and the dashboard shows it as a denial rather than as an
 unbridged call.
+
+## D-32 — Depend only on what is effectively part of C
+
+Libraries are not avoided on principle. What is avoided is depending on
+anything that cannot be counted on to still be there, still behave the
+same way, and still compile, years from now.
+
+**Acceptable:** the C11 standard library, POSIX 2008, and glibc — things
+that are effectively part of the C environment, that change slowly if at
+all, and that break backward compatibility only with a long and
+well-signposted runway.
+
+**Not acceptable:** everything else, however convenient.
+
+Two reasons, and the second is the one that bites:
+
+1. **Bloat and unmeasured cost.** A library gets chosen on its API. What
+   it does internally is rarely evaluated and almost never measured, so
+   its cost lands somewhere in the hot path unexamined.
+2. **Supply risk.** A third-party dependency can change its interface,
+   change its behaviour, or disappear. Then the build breaks with no
+   warning and no recourse, on someone else's schedule.
+
+Three specific exclusions, none of which are judgements about quality —
+all three are simply unnecessary here, and each one not taken is one
+fewer thing to track:
+
+- **OpenSSL** — `crypto.c` carries its own SHA/HMAC, small and already
+  proven in the ancestors. OpenSSL is mainstream and *still* broke
+  compilation across 1.0 → 1.1 → 3.0, which is reason 2 in its purest
+  form: mainstream is not the same as stable.
+- **cJSON or similar** — events are `printf`-formatted. The daemon only
+  ever *emits* JSON and never parses it (D-10).
+- **libevent** — `eventloop.c` is lifted from ipsc2hbpc and proven.
+
+The result is a single binary an operator can build on any reasonably
+current Linux and expect to keep building.
