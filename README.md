@@ -105,10 +105,10 @@ seconds would be the worst kind of migration bug. Full semantics in
 [`docs/CONFIG.md`](docs/CONFIG.md) §4 and
 [`docs/ROUTING.md`](docs/ROUTING.md) §4.
 
-## Rules files without python syntax
+## Rules files without Python syntax
 
-Writing rules in native Python can be unforgiving: one typo or  and the 
-errant space and the daemon does not come up.
+Writing rules in native Python can be unforgiving: one typo or errant
+space and the daemon does not come up.
 
 - **Two files.** `omnilink.toml` holds systems, ports, and credentials
   and needs a restart. `rules.toml` holds bridges and ACLs and **reloads
@@ -117,7 +117,8 @@ errant space and the daemon does not come up.
   *nothing* — the daemon keeps routing on the rules it has and tells you
   what is wrong and how to fix it.
 - **`omnilink --check-config`** runs that same validator against files on
-  disk, so a bad rules file gets caught you restart your live network.
+  disk, so a bad rules file gets caught before you restart your live
+  network.
 - **Calls in flight finish on the rules they started under.** Reloading
   during a conversation does not cut it off.
 - A **web rules editor** comes later ([`PLAN.md`](PLAN.md) phase 7), and
