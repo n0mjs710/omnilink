@@ -359,11 +359,10 @@ and never decodes the LC — its BPTC decode is commented out at
 in the future. It costs little to generate a proper LC, so we will
 include that behavior here as a hedge against the future.
 
-**This is protocol machinery, not frame synthesis.** The link never
-becomes a routed stream and never enters the core; the adapter emits it
-directly to its socket, exactly like a login or a keepalive. The
-"nothing synthesizes frames" rule (D-14) is about fabricating call
-content into the routing path and is not weakened here.
+**This is a control protocol, not stream frame synthesis.** The link
+commands never become a routed stream and never enters the core; the 
+adapter emits it directly to the socket, exactly like a login or a 
+keepalive.
 
 **Never lift a canned payload blob** from prior art. The link burst's LC
 is built from this system's own radio ID and the target module TGID every
