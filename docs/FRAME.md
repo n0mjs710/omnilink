@@ -5,16 +5,17 @@
 36-byte payload the core never parses.
 
 The payload carries the **33-byte on-air DMR burst, verbatim** (D-05).
-HBP and OpenBridge therefore pass through with no re-encoding at all;
-IPSC and CC-CC build the burst on ingress and reduce it on egress, at
-their own edges.
+HBP, OpenBridge, and XLX therefore pass through with no re-encoding at
+all; IPSC re-packs the same DMR elements its wire already carries; and
+**CC-CC is the only adapter that must synthesize burst structure**
+(§4.1).
 
 **The frame is not the DMRD packet**, and that distinction is
 load-bearing (D-05). DMRD has nowhere to put which configured system a
 frame arrived on, the core's own stream tag, headerless/late-entry
 status, or call-type flags that outlive one protocol's encoding — and
-using it would force IPSC and CC to fabricate a repeater ID and a stream
-ID just to say anything at all. So: explicit metadata, wrapping an
+using it would force the legacy adapters to fabricate a repeater ID and
+a stream ID just to say anything at all. So: explicit metadata, wrapping an
 untouched burst.
 
 ## 1. Layout
@@ -171,15 +172,27 @@ payload[0..32]   the 33-byte burst
 payload_len = 33
 ```
 
-For **HBP and OBP** this is a copy — ingress and egress touch the burst
-only where routing requires it (§4.1.1). For **IPSC and CC**, which carry
-AMBE plus unpacked DMR elements rather than an assembled burst, the
-adapter re-packs on ingress and unpacks on egress; `dmr/` implements
-every primitive (`dmr_ambe_49_to_72` and
-its inverse, BPTC, embedded LC, RS(12,9), and the precomputed slot-type,
-EMB, and sync tables).
+Adapters fall into three tiers, and the gap between the second and third
+is much larger than the gap between the first and second:
 
-Two rules bind any adapter that must **construct** a burst:
+| tier | adapters | what the wire has | ingress work |
+|---|---|---|---|
+| **assembled burst** | HBP, OBP, XLX | the burst itself | copy |
+| **unpacked elements** | IPSC | LC, embedded LC, headers, terminators, superframe position, timeslot — everything but the OTA FEC/interleave, EMB, and slot type | re-pack |
+| **AMBE + call signalling** | CC-CC | three 49-bit AMBE frames, RTP, B-on/B-off | **synthesize** |
+
+**CC-CC is the only adapter without the burst and superframe data
+already baked in.** Everything else has the material and merely has to
+assemble it. That is why the invented-structure rules below have exactly
+one adapter as their real audience, why only CC-CC runs its own A–F
+position counter (ADAPTERS §6), and why only CC-CC's conformance
+identity is asserted on the AMBE bits alone (§7).
+
+`dmr/` implements every primitive either tier needs
+(`dmr_ambe_49_to_72` and its inverse, BPTC, embedded LC, RS(12,9), and
+the precomputed slot-type, EMB, and sync tables).
+
+Two rules bind any adapter that assembles a burst:
 
 1. **Header and payload must agree.** The burst's LC carries source and
    destination redundantly with the frame header. They are patched

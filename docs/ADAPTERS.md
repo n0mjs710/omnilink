@@ -69,16 +69,19 @@ semantics lie.
   `origin_slot`.
   For burst-native protocols (HBP, OBP, XLX) this is a copy.
 
-  **IPSC and CC-CC re-pack rather than copy, and they are not the same
-  case.** IPSC carries the same DMR protocol elements HBP does — voice
-  headers and terminators, a DMR LC, embedded LC, superframe position,
-  timeslot — just arranged differently and without the over-the-air FEC
-  and interleave. Its adapter therefore *re-packs* real material: the LC
-  is lifted from IPSC's own LC, not invented, and only the structural
-  wrapping (BPTC, slot type, sync, EMB) is built. CC-CC genuinely does
-  carry bare AMBE plus call signalling, so its adapter constructs more.
+  **IPSC re-packs; CC-CC synthesizes. They are not the same case.** IPSC
+  carries the same DMR protocol elements HBP does — voice headers and
+  terminators, a DMR LC, embedded LC, superframe position, timeslot —
+  arranged differently and without the over-the-air FEC and interleave.
+  Its LC is lifted from IPSC's own LC, never invented, and only the
+  structural wrapping is assembled.
 
-  In both cases the LC must agree with the frame header, and anything
+  **CC-CC is the only adapter without burst and superframe data on its
+  wire** — three 49-bit AMBE frames, RTP, and B-on/B-off, and nothing
+  else (FRAME §4.1). It is therefore the only adapter that invents
+  structure, and the only one running its own A–F position counter (§6).
+
+  In every case the LC must agree with the frame header, and anything
   actually built comes from `dmr/`'s tables (D-28) — never from a
   captured constant.
 - **Stamp `origin_slot` always**, including on unslotted transports,

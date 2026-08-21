@@ -110,8 +110,10 @@ Consequences carried forward:
 ## D-05 — The frame wraps the untouched 33-byte DMR burst
 
 Voice rides the core as the **33-byte on-air burst**, unmodified — the
-representation HBP and OBP already carry on the wire. IPSC and CC-CC
-translate to and from it at their own edges. HBP is the dominant traffic
+representation HBP and OBP already carry on the wire. IPSC re-packs the
+same DMR elements its own wire carries; CC-CC, the only transport with
+no burst or superframe data at all, synthesizes structure. Both at their
+own edges. HBP is the dominant traffic
 source, so the dominant path re-encodes nothing:
 
 | path | conversions |
@@ -154,10 +156,13 @@ Accepted knowingly:
   retarget — so it is a property of DMR routing generally. This is a real,
   recurring bug class. hblink3 solves it with per-stream precomputed LCs
   and that approach is the reference implementation.
-- A legacy→legacy path synthesizes burst structure (sync, EMB, slot
-  type) that no downstream consumer reads. Bounded, and it comes from
-  `dmr/`'s fixed tables (D-28) — never from a canned blob lifted out of
-  a capture. The LC inside it is built from the real stream.
+- A path through CC-CC synthesizes burst structure (sync, EMB, slot
+  type, superframe position) that no downstream consumer reads. Bounded,
+  and it comes from `dmr/`'s fixed tables (D-28) — never from a canned
+  blob lifted out of a capture. **CC-CC is the only adapter that
+  synthesizes anything**: HBP, OBP, and XLX carry the assembled burst,
+  and IPSC carries every DMR element unpacked, so both merely assemble
+  what they were given.
 
 ## D-06 — OpenBridge is the trunk
 

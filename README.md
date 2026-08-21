@@ -49,9 +49,10 @@ migration tool ships with the gate that proves it.
 **MMDVM/HBP is the dominant traffic source, so it is the shape of the
 core.** Voice rides through as the 33-byte on-air DMR burst — the same
 bytes HBP and OpenBridge already put on the wire. HBP→HBP, HBP→OBP, and
-HBP→XLX therefore re-encode *nothing*. IPSC and CC-CC translate at their
-own edges, where the cost belongs, because they are the legacy inbound
-cases and they are shrinking.
+HBP→XLX therefore re-encode *nothing*. IPSC carries the same DMR
+material unpacked and re-packs it at its own edge. CC-CC — the only
+transport that carries bare AMBE with no burst or superframe data — is
+the one place anything is synthesized, and it is the shrinking case.
 
 **OpenBridge is the trunk.** Instance-to-instance federation is OBP, not
 a bespoke protocol — it is the most efficient hop available and both ends
