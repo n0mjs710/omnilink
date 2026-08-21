@@ -355,8 +355,9 @@ sent to frame the call correctly.
 Build the LC from the same src/dst as the DMRD header
 (FRAME §4 rule 1). xlxd reads the destination from header bytes 8–10
 and never decodes the LC — its BPTC decode is commented out at
-`:657-660` — so a contradictory LC *would* work, and must still not be
-shipped: it is invisible to every test that does not decode audio.
+`:657-660` — so a contradictory LC *would* work, but is could be changed
+in the future. It costs little to generate a proper LC, so we will
+include that behavior here as a hedge against the future.
 
 **This is protocol machinery, not frame synthesis.** The link never
 becomes a routed stream and never enters the core; the adapter emits it
