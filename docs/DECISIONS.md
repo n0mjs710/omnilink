@@ -717,10 +717,10 @@ tests above; do not add one and mention it in a commit message.
 
 ## D-33 — Implementers recommend; the lead author approves
 
-**Cortney T. Buffington (N0MJS) is the lead author.** OmniLink is written
-with substantial help from coding tools, and those tools produce good
-recommendations — but a recommendation is not a decision, and the
-difference is deliberate.
+**The lead author is the single approving authority for this project.**
+OmniLink is written with substantial help from coding tools, and those
+tools produce good recommendations — but a recommendation is not a
+decision, and the difference is deliberate.
 
 - **Anyone implementing may propose anything**: a design change, a
   dependency, a departure from hblink3, a different structure. Proposals
