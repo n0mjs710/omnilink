@@ -505,9 +505,19 @@ down a router carrying ninety-nine working systems. Telemetry and
 infrastructure the router does not control should never become
 prerequisites for it to run.
 
-Restart to pick it up again. Retrying on a timer would have to bring a
-system up after startup, which the immutable system table (D-09) does not
-allow — and reusing `enabled` means no new state to reason about.
+**Restart is the retry mechanism.** In-process retry would bring a system
+up after startup — mutating the immutable system table (D-09) and
+allocating that system's sockets and pools mid-run, which is what the
+startup-allocation model exists to prevent (D-23). A restart gets a
+clean, bounded allocation. Reusing `enabled` also means no new state to
+reason about.
+
+**Do not make it exit.** A daemon that quits because one system failed to
+resolve, under `Restart=`, becomes a restart loop that drops every call
+on every system each time round. Start degraded and stay up.
+
+Using a hostname is the operator's choice and carries this consequence.
+Configure addresses instead and it cannot arise.
 
 This is the single-thread model's real hazard, not a spinning protocol
 bug — the watchdog covers those.
