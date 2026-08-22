@@ -710,3 +710,37 @@ fewer thing to track:
 
 The result is a single binary an operator can build on any reasonably
 current Linux and expect to keep building.
+
+**Adding a dependency is a decision, not an implementation detail**
+(D-33). Propose it, with what it buys and what it costs against the two
+tests above; do not add one and mention it in a commit message.
+
+## D-33 — Implementers recommend; the lead author approves
+
+**Cortney T. Buffington (N0MJS) is the lead author.** OmniLink is written
+with substantial help from coding tools, and those tools produce good
+recommendations — but a recommendation is not a decision, and the
+difference is deliberate.
+
+- **Anyone implementing may propose anything**: a design change, a
+  dependency, a departure from hblink3, a different structure. Proposals
+  are welcome and expected; a tool that spots a real problem and says
+  nothing is worse than one that argues.
+- **Only the lead author approves.** Approval means the decision is
+  recorded here, the documents that depend on it are updated in the same
+  pass, and the change lands afterwards — not before.
+- **Nothing lands on "it seemed better."** The docs are normative
+  (STYLE.md). An implementer who finds them wrong writes a
+  `docs/DEVIATIONS.md` entry, implements the smallest reasonable
+  reading, and keeps going — that entry *is* the proposal.
+
+The reason is not process for its own sake. Several tools contribute, at
+different times, without shared memory of what was already weighed and
+rejected. A decision that one of them makes unilaterally is invisible to
+the next, and the corpus stops being a single coherent design. Routing it
+through one person is what keeps it one design rather than a merge of
+several.
+
+This applies to everything with a decision record: routing semantics,
+timers, protocol behaviour, dependencies (D-32), threading (D-08), config
+shape. When in doubt, it is a decision.

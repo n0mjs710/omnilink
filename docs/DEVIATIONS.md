@@ -7,11 +7,11 @@ here, implement the smallest reasonable interpretation, and keep going.
 Do not silently diverge, and do not silently halt.
 
 **Implementers do not edit the normative docs.** An entry here is how a
-change gets proposed; the project owner folds accepted entries back into
+change gets proposed; the lead author folds accepted entries back into
 the doc and the decision record, then marks the entry resolved.
 
 An entry is worth writing when a doc is contradicted, not when a doc is
-merely silent. Silence is a question for the owner (CLAUDE.md).
+merely silent. Silence is a question for the lead author (D-33).
 
 ## Format
 

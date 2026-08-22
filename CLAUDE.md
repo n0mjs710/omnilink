@@ -15,7 +15,7 @@ network runs.
 predating that commit is withdrawn. If you find a document, comment, or
 issue describing a representation-neutral core, TGID-only routing, a
 `PORT` trunk, a Playback/talkback adapter, foreign digital modes, or "no
-config reload," it is a leftover — treat it as absent and tell the owner.
+config reload," it is a leftover — treat it as absent and say so.
 
 ## Non-negotiable
 
@@ -23,10 +23,13 @@ config reload," it is a leftover — treat it as absent and tell the owner.
   match your code. If reality contradicts a doc, append an entry to
   `docs/DEVIATIONS.md` (what, where, why, proposed fix), implement the
   smallest reasonable interpretation, and keep going — flag-then-fix.
-  Doc changes themselves are made only by the project owner's session.
-- **Design questions the docs don't answer go to the owner (N0MJS).** Do
-  not improvise policy. Routing semantics, timers, protocol behavior
-  choices — ask, don't guess.
+  Doc changes themselves are made only by the lead author's session.
+- **You recommend; the lead author approves** (D-33). Propose anything —
+  a design change, a dependency, a departure from hblink3 — and propose
+  it clearly. Then stop. Routing semantics, timers, protocol behaviour,
+  dependencies, and config shape are all decisions, and several tools
+  work on this project without shared memory, so one landing a change
+  unilaterally is invisible to the next.
 - **hblink3 is the tie-breaker.** Where the docs are silent on a routing
   question, hblink3's `bridge.py` behavior is the answer (D-03). There
   are exactly three deliberate departures — D-16 (per-bridge talker
@@ -36,7 +39,7 @@ config reload," it is a leftover — treat it as absent and tell the owner.
 - **The daemon is single-threaded** (D-08) and
   `grep -E 'pthread_|sem_|_Atomic|atomic_'` over `src/` returns nothing.
   That is the current design, not a taboo — but adding a thread is a
-  design change for the owner to make, so stop and raise it rather than
+  design change for the lead author to make, so stop and raise it rather than
   introducing one. What is actually avoided is **locking**, not threads:
   lock-free is fine — atomics for state, an SPSC ring for packets.
 - **No malloc on the datapath.** Allocation happens in `*_new()`/init at

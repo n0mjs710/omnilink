@@ -107,6 +107,6 @@ obvious, no changelog comments.
   entry, implement the smallest reasonable interpretation, and keep going**
   (the flag-then-fix pattern proven on cc2obp) — do not silently diverge and
   do not silently halt. **Do not edit the doc yourself**: normative doc
-  changes are made only by the project owner (CLAUDE.md). The DEVIATIONS
-  entry is how the change gets proposed.
+  changes are made only by the lead author (D-33). The DEVIATIONS entry
+  is how the change gets proposed.
 - GPLv3 headers on new files, N0MJS copyright, matching the house form.
