@@ -178,7 +178,8 @@ their protocol-specific parts.
 - **Startup:** parse `omnilink.toml` → build the immutable system table
   → resolve every hostname (D-22) → parse and validate `rules.toml` into
   generation 1 → adapters `init()` (open sockets, register fds and timers)
-  → `ev_run`. Any validation failure is fatal and loud (CONFIG §6.4).
+  → `ev_run`. Config errors are fatal; a hostname that will not resolve
+  disables that system alone and startup continues (CONFIG §6.4).
 - **Housekeeping:**
   - core stream sweep, 500 ms — timeouts free the stream, release
     arbitration, emit `call_end`, send nothing downstream (D-14);

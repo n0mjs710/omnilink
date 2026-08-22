@@ -101,7 +101,7 @@ fields.** Plane: S = systems, B = bridge, G = global.
 
 | ev | plane | fields | source |
 |---|---|---|---|
-| `startup`, `shutdown` | G | version, config summary | core |
+| `startup`, `shutdown` | G | version, config summary, and any system disabled at load with the reason (CONFIG §6.4) | core |
 | `system_up`, `system_down` | S | | core, via `nx_core_system_state` |
 | `endpoint_connected`, `endpoint_lost` | S | id, callsign if known, address, `kind` (§4.1), endpoint class | adapters |
 | `call_start` | B+S+G | bridge(s), or `local:true`; src; dst; origin system/repeater/slot; stream tag; originating wire `stream_id` (FRAME §3.1); unit and headerless markers; **members forwarded to** (intent) | core; adapters for local repeat |

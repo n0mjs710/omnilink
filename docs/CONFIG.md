@@ -456,10 +456,17 @@ rewrote.
 
 ### 6.4 Startup
 
-Failure at startup is fatal and loud. A daemon that starts with half a
-config is worse than one that does not start, because the operator
-discovers the difference from an on-air complaint rather than from
-`systemctl status`.
+**What the operator got wrong is fatal.** A malformed value, an unknown
+key, a member naming a system that does not exist — the daemon refuses to
+start. Half a config running is worse than nothing running, because the
+operator finds out from an on-air complaint rather than from
+`systemctl status`, and these do not fix themselves.
+
+**What the world got wrong disables one system.** A hostname that will
+not resolve right now is logged at error and that system starts disabled,
+exactly as `enabled = false` would (D-22). Everything else comes up. A
+peer's DNS outage is not a reason to stop routing for every other system,
+and a restart picks it up once it resolves.
 
 ## 7. The web rules editor (deferred, PLAN phase 7)
 

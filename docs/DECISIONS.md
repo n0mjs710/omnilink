@@ -495,8 +495,19 @@ fire, because the process is alive, just deaf.
 
 Config load turns every hostname into a `sockaddr` once; the datapath and
 reconnect timers never call `getaddrinfo`. An address change needs a
-restart, consistent with D-09. If re-resolution is ever wanted it belongs
-on a slow timer that tolerates failure, never in a connect path.
+restart, consistent with D-09.
+
+**A name that will not resolve at startup disables that one system and
+nothing else.** Log it at error, mark the system disabled exactly as
+`enabled = false` would, and carry on starting the rest. DNS is not ours
+and it is not the operator's mistake; one unreachable peer must not take
+down a router carrying ninety-nine working systems. Telemetry and
+infrastructure the router does not control should never become
+prerequisites for it to run.
+
+Restart to pick it up again. Retrying on a timer would have to bring a
+system up after startup, which the immutable system table (D-09) does not
+allow — and reusing `enabled` means no new state to reason about.
 
 This is the single-thread model's real hazard, not a spinning protocol
 bug — the watchdog covers those.
