@@ -84,7 +84,7 @@ void nx_core_ingress(uint16_t sys, uint32_t tag, const uint8_t *dmrd, int len);
 Layout, the `bits` byte, the stream tag, and the burst rules are in
 FRAME.md.
 
-**The core is deliberately not protocol-agnostic.** Abstraction away from
+**The core is not protocol-agnostic, by design.** Abstraction away from
 DMRD was only ever justified by a claim we do not make. OmniLink is DMR
 only (D-02), so there is no second air interface to stay neutral toward;
 HBP/MMDVM is dominant, OBP and XLX are DMRD-shaped, IPSC and CC-CC are
@@ -126,7 +126,7 @@ Instance-to-instance federation is OpenBridge, not a bespoke protocol. An
 OBP hop is near-passthrough, so a purpose-built trunk's one selling point
 — zero translation loss — is not a differentiator. It also deletes an
 adapter, a wire format, and an authentication scheme from a project whose
-scope is deliberately modest (D-20).
+scope is modest by design (D-20).
 
 The origin system index and the stream tag do not cross an OBP hop; the
 far end derives the system from which peer the traffic arrived on and
@@ -168,7 +168,7 @@ whose wrong setting is visible is exposed.
   each end to configure it independently.
 
 **XLX and CC-CC join exactly one bridge**, enforced at rules load. Two
-failures follow otherwise, and the second is load-bearing:
+failures follow otherwise, and the second is why the rule exists:
 
 1. Ingress is ambiguous — nothing on the wire says which bridge a stream
    belongs to, so one stream would have to become two.
@@ -390,8 +390,8 @@ conversation is not trampled by a *different* talkgroup. A bridge carries
 one conversation by definition.
 
 A per-bridge hang timer would refuse **every** contender, because every
-contender on a bridge is same-talkgroup by construction — precisely the
-case both ancestors admit:
+contender on a bridge is same-talkgroup by construction — the case both
+ancestors admit:
 
 ```python
 # hblink4/hblink.py — group-call hang
@@ -579,7 +579,7 @@ lets a receiver ignore a co-channel repeater it is not meant to hear. It
 has no meaning between repeaters, and each applies its own before
 transmitting.
 
-Three rules, deliberately not one rule:
+Three rules, not one:
 
 - **Never read it.** Not a routing key, not an ACL input, not a match
   condition, not a filter.
@@ -687,7 +687,7 @@ well-signposted runway.
 
 **Not acceptable:** everything else, however convenient.
 
-Two reasons, and the second is the one that bites:
+Two reasons. The second is the more common failure:
 
 1. **Bloat and unmeasured cost.** A library gets chosen on its API. What
    it does internally is rarely evaluated and almost never measured, so

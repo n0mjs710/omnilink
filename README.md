@@ -163,7 +163,7 @@ dashboards you have seen.
   concealed or re-timed. DMR radios were engineered for exactly these
   conditions, and a router that "improves" the stream only masks
   problems. The one exception is transmit pacing toward MOTOTRBO
-  repeaters, which genuinely need it.
+  repeaters, which need it.
 
 ## The shape of the software
 

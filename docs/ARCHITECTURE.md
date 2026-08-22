@@ -142,7 +142,7 @@ does not require it:
   needs it and it is a standing bug class (D-05).
 
 The result is that `hbp`, `ipsc`, `obp`, `cc`, and `xlx` each reduce to
-their genuinely protocol-specific parts, which was the point.
+their protocol-specific parts.
 
 ## 4. Memory discipline (D-23)
 
@@ -250,7 +250,7 @@ the validator (specific messages with remedies for five protocols is
 700–900 lines by itself) and the dynamic-rule engine, which looks like a
 flag and is a state machine with asymmetric triggers.
 
-## 8. What is deliberately not here
+## 8. What is not here, by choice
 
 - No threads, locks, atomics, rings, or wakeup plumbing (D-08).
 - No transcoding, no second air interface (D-02).

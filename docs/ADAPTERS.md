@@ -163,7 +163,7 @@ nothing up. That is D-21, and it is also the only thing that could work,
 since unit calls route from a cache no adapter can see.
 
 An adapter holding a private replica of bridge membership would be rule
-distribution to the edge, which is precisely what D-21 forbids.
+distribution to the edge, which D-21 forbids.
 
 - **Copy once, rewrite everything in that pass.** The core hands a
   `const` packet plus the target. The adapter copies it and writes
@@ -176,8 +176,8 @@ distribution to the edge, which is precisely what D-21 forbids.
 - Slotted protocols call **`channel.c`** for per-`(system, slot)`
   arbitration, hang time, and the `stream_to` contention horizon
   (ROUTING §5.2), with local-repeat traffic in the same arbitration
-  state. This module is shared precisely because it is the easiest thing
-  in the project to get subtly different in two places.
+  state. It is shared because it is the easiest thing in the project to
+  get subtly different in two places.
 - **Preserve `dtype`/`vseq` from the incoming packet** — `t->slot` is the
   only part of the `bits` byte that changes (FRAME §1.1). For a
   headerless stream, build a minimal LC from the packet's own src/dst and
@@ -211,7 +211,7 @@ registrations from repeaters and hotspots and repeats among them; a
 client dials out and logs in. It is never "master and peer" — that is
 IPSC's vocabulary, borrowed by tools that arrived after it, and it
 misdescribes the architecture. IPSC keeps `master`/`peer` because IPSC
-genuinely is a peer-to-peer mesh whose master only holds the bootstrap
+is a peer-to-peer mesh whose master only holds the bootstrap
 list (§5.2). Both are correct; neither is the other.
 
 - **Modes:** `server` — serve MMDVM repeaters and hotspots, the primary

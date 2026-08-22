@@ -208,7 +208,7 @@ synchronous pass with nothing mutating underneath.
 
 ## 8. Dashboard application
 
-Python, in `dashboard/`, deliberately boring and separate from the daemon
+Python, in `dashboard/`, boring by intent and separate from the daemon
 — the event and command contracts above are normative, this application
 is not (D-10).
 

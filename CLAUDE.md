@@ -7,9 +7,9 @@ README.md first, then the doc for your task.
 **What crosses the adapter/core boundary is the DMRD packet itself**, plus
 a system index and a core-assigned stream tag as arguments (D-05,
 FRAME.md). There is no internal frame struct. The core reads the DMRD
-header and the `bits` byte and treats the burst as opaque; it is
-deliberately not protocol-agnostic, because OmniLink is DMR only and
-DMRD is what the network actually runs.
+header and the `bits` byte and treats the burst as opaque. It is not
+protocol-agnostic, by design: OmniLink is DMR only, and DMRD is what the
+network runs.
 
 **The design corpus was rebuilt from zero on 2026-08-21.** Everything
 predating that commit is withdrawn. If you find a document, comment, or
@@ -55,7 +55,7 @@ Check here before "fixing" one of these:
 - **One ingress stream feeding several bridges** is correct (D-04). The
   bridge index maps to a *list*.
 - **Activation triggers fire on call start, deactivation on call end.**
-  That asymmetry is deliberate and load-bearing (ROUTING §4.1).
+  Read ROUTING §4.1 before changing either.
 - **Same TGID from a different source is admitted during hang.** Getting
   this "right" locks out every round-table net (D-16).
 - **A locally repeated call emits two `call_start` events.** Consumers

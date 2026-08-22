@@ -12,7 +12,7 @@ void nx_core_ingress(uint16_t sys, uint32_t tag, const uint8_t *dmrd, int len);
   (ADAPTERS §1).
 - `tag` — the core-assigned stream identity (§3).
 
-There is no internal frame format, deliberately. DMRD is already
+There is no internal frame format. DMRD is already
 specified, already carries everything the core routes on, and is already
 exercised in production by four codebases in this family. A second
 byte-exact representation would have to be specified, tested, and kept
@@ -205,7 +205,7 @@ Two rules bind any adapter that assembles a burst:
    prior art and patching a couple of fields is how contradictory bursts
    get shipped.
 
-   Structural fields genuinely absent from the origin — sync flavour,
+   Structural fields absent from the origin — sync flavour,
    EMB, slot type — come from `dmr/`'s tables at colour code 1, per §4.2.
    They are not configuration.
 
@@ -236,7 +236,7 @@ and no internal representation would have avoided it.
 
 Colour code is an RF air-interface interference-mitigation mechanism. It
 has no meaning between repeaters; each applies its own before
-transmitting. Three rules, deliberately not one rule (D-28):
+transmitting. Three rules, not one (D-28):
 
 - **Never read it.** Not a routing key, not an ACL input, not a match
   condition, not a filter.
@@ -276,8 +276,8 @@ it is declared done**:
      DMR LC and a retarget rewrites it in place (dmrlink3 does exactly
      this), so a vector ignoring the LC would miss the entire addressing
      bug class.
-   - **CC-CC** — asserted on the AMBE bits only; its wire genuinely
-     carries nothing else.
+   - **CC-CC** — asserted on the AMBE bits only; its wire carries
+     nothing else.
 
    In every case, purely structural fields the origin never carried —
    sync, slot type, EMB — are not round-tripped and must not be asserted

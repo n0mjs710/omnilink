@@ -14,7 +14,7 @@ an advertisement we do not currently send. When that happens the operator
 should be able to change it from a config file rather than by patching
 code — so the flags are exposed, documented, and defaulted off.
 
-That is the entire justification. It is insurance, not a feature.
+They are insurance, not a feature.
 
 ## Using them
 

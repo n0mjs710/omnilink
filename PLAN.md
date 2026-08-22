@@ -2,14 +2,13 @@
 
 **Ordering principle:** get real RF audio through the core as early as
 possible, then make it a credible hblink3 replacement, then add the
-legacy edges. The routing core is the one genuinely novel part;
+legacy edges. The routing core is the only novel part;
 everything after it is porting things we have already built once.
 
 Each phase has an **acceptance gate**. A phase is not done until its gate
 passes.
 
-Two consequences of D-12 shape this plan and are worth stating up front,
-because they are what changed:
+Two consequences of D-12 shape this plan:
 
 - **ACLs and the dynamic-rules engine are phase 1**, not backlog. A
   network cannot cut over to a router that will not express its current

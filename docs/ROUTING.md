@@ -384,7 +384,7 @@ owes a loopback-identity vector (D-11, FRAME §6).
 5. **Federation preserves origin metadata.** OBP with
    `preserve_source_peer` keeps the originating repeater ID and `src_id`
    intact across instances, so these observations hold across federated
-   cores. TTL fields remain deliberately absent.
+   cores. TTL fields stay absent.
 
 ## 9. What the core does not do
 
