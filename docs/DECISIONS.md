@@ -512,9 +512,17 @@ startup-allocation model exists to prevent (D-23). A restart gets a
 clean, bounded allocation. Reusing `enabled` also means no new state to
 reason about.
 
-**Do not make it exit.** A daemon that quits because one system failed to
-resolve, under `Restart=`, becomes a restart loop that drops every call
-on every system each time round. Start degraded and stay up.
+**Do not make it exit, and do not restart it on a schedule.** A daemon
+that quits because one system failed to resolve, under `Restart=`,
+becomes a loop dropping every call on every system each time round — and
+an automatic restart to chase a name that may still not resolve does the
+same thing more slowly. Start degraded and stay up; a restart is an
+operator action taken when the name is known to be fixed.
+
+This does not argue against `Restart=` itself. Restarting a process that
+has crashed or stalled is what bounds a wedged adapter (D-08). Restarting
+a *healthy* daemon to re-read something external is the case that costs
+more than it recovers.
 
 Using a hostname is the operator's choice and carries this consequence.
 Configure addresses instead and it cannot arise.
